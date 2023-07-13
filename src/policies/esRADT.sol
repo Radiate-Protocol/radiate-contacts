@@ -126,6 +126,8 @@ contract esRADT is ERC20("Escrowed RADT", "esRADT"), Ownable, ReentrancyGuard {
     }
 
     function exitEarly() external nonReentrant returns (uint256) {
+        require(userInfo[msg.sender].totalVested > 0, "no mint");
+
         // 50% penalty for early exit – claim rewards first and then exit early
         uint256 claimable;
         if (whitelist[msg.sender] == true) {
@@ -135,6 +137,7 @@ contract esRADT is ERC20("Escrowed RADT", "esRADT"), Ownable, ReentrancyGuard {
             userInfo[msg.sender].totalVested = 0;
             userInfo[msg.sender].lastInteractionTime = block.timestamp;
         }
+
         uint256 timePass = block.timestamp.sub(
             userInfo[msg.sender].lastInteractionTime
         );

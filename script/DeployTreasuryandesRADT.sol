@@ -10,7 +10,7 @@ contract DeployTresasury is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
-        address deployer = vm.addr(deployerPrivateKey);
+        // address deployer = vm.addr(deployerPrivateKey);
         ERC20 RADT = ERC20(0x7CA0B5Ca80291B1fEB2d45702FFE56a7A53E7a97);
         Kernel kernel = Kernel(0x6d37F6eeDc9ED384E56C67827001901F9Af2EA5F);
         Chest chest = new Chest(kernel);
