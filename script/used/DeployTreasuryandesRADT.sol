@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
 import "src/Kernel.sol";
-import {Chest, ERC20} from "src/policies/CHEST.sol";
+import {Chest, ERC20} from "src/policies/Chest.sol";
 import {esRADT} from "src/policies/esRADT.sol";
 
 contract DeployTresasury is Script {
