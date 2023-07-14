@@ -8,7 +8,8 @@ import {IAaveIncentivesController} from "./IAaveIncentivesController.sol";
  * @title IInitializableDebtToken
  * @notice Interface for the initialize function common between debt tokens
  * @author Aave
- **/
+ *
+ */
 interface IInitializableDebtToken {
     /**
      * @dev Emitted when a debt token is initialized
@@ -19,7 +20,8 @@ interface IInitializableDebtToken {
      * @param debtTokenName the name of the debt token
      * @param debtTokenSymbol the symbol of the debt token
      * @param params A set of encoded parameters for additional initialization
-     **/
+     *
+     */
     event Initialized(
         address indexed underlyingAsset,
         address indexed pool,

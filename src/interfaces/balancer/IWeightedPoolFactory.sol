@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.15;
 pragma abicoder v2;
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IBasePool is IERC20 {
@@ -8,10 +9,7 @@ interface IBasePool is IERC20 {
 
     function setSwapFeePercentage(uint256 swapFeePercentage) external;
 
-    function setAssetManagerPoolConfig(
-        IERC20 token,
-        IAssetManager.PoolConfig memory poolConfig
-    ) external;
+    function setAssetManagerPoolConfig(IERC20 token, IAssetManager.PoolConfig memory poolConfig) external;
 
     function setPaused(bool paused) external;
 
@@ -42,19 +40,11 @@ interface IWeightedPool is IBasePool {
     function getGradualWeightUpdateParams()
         external
         view
-        returns (
-            uint256 startTime,
-            uint256 endTime,
-            uint256[] memory endWeights
-        );
+        returns (uint256 startTime, uint256 endTime, uint256[] memory endWeights);
 
     function setSwapEnabled(bool swapEnabled) external;
 
-    function updateWeightsGradually(
-        uint256 startTime,
-        uint256 endTime,
-        uint256[] memory endWeights
-    ) external;
+    function updateWeightsGradually(uint256 startTime, uint256 endTime, uint256[] memory endWeights) external;
 
     function withdrawCollectedManagementFees(address recipient) external;
 
@@ -83,27 +73,13 @@ interface IAssetManager {
 interface IAsset {}
 
 interface IVault {
-    function hasApprovedRelayer(
-        address user,
-        address relayer
-    ) external view returns (bool);
+    function hasApprovedRelayer(address user, address relayer) external view returns (bool);
 
-    function setRelayerApproval(
-        address sender,
-        address relayer,
-        bool approved
-    ) external;
+    function setRelayerApproval(address sender, address relayer, bool approved) external;
 
-    event RelayerApprovalChanged(
-        address indexed relayer,
-        address indexed sender,
-        bool approved
-    );
+    event RelayerApprovalChanged(address indexed relayer, address indexed sender, bool approved);
 
-    function getInternalBalance(
-        address user,
-        IERC20[] memory tokens
-    ) external view returns (uint256[] memory);
+    function getInternalBalance(address user, IERC20[] memory tokens) external view returns (uint256[] memory);
 
     function manageUserBalance(UserBalanceOp[] memory ops) external payable;
 
@@ -121,17 +97,9 @@ interface IVault {
         TRANSFER_INTERNAL,
         TRANSFER_EXTERNAL
     }
-    event InternalBalanceChanged(
-        address indexed user,
-        IERC20 indexed token,
-        int256 delta
-    );
-    event ExternalBalanceTransfer(
-        IERC20 indexed token,
-        address indexed sender,
-        address recipient,
-        uint256 amount
-    );
+
+    event InternalBalanceChanged(address indexed user, IERC20 indexed token, int256 delta);
+    event ExternalBalanceTransfer(IERC20 indexed token, address indexed sender, address recipient, uint256 amount);
 
     enum PoolSpecialization {
         GENERAL,
@@ -139,66 +107,33 @@ interface IVault {
         TWO_TOKEN
     }
 
-    function registerPool(
-        PoolSpecialization specialization
-    ) external returns (bytes32);
+    function registerPool(PoolSpecialization specialization) external returns (bytes32);
 
-    event PoolRegistered(
-        bytes32 indexed poolId,
-        address indexed poolAddress,
-        PoolSpecialization specialization
-    );
+    event PoolRegistered(bytes32 indexed poolId, address indexed poolAddress, PoolSpecialization specialization);
 
-    function getPool(
-        bytes32 poolId
-    ) external view returns (address, PoolSpecialization);
+    function getPool(bytes32 poolId) external view returns (address, PoolSpecialization);
 
-    function registerTokens(
-        bytes32 poolId,
-        IERC20[] memory tokens,
-        address[] memory assetManagers
-    ) external;
+    function registerTokens(bytes32 poolId, IERC20[] memory tokens, address[] memory assetManagers) external;
 
-    event TokensRegistered(
-        bytes32 indexed poolId,
-        IERC20[] tokens,
-        address[] assetManagers
-    );
+    event TokensRegistered(bytes32 indexed poolId, IERC20[] tokens, address[] assetManagers);
 
     function deregisterTokens(bytes32 poolId, IERC20[] memory tokens) external;
 
     event TokensDeregistered(bytes32 indexed poolId, IERC20[] tokens);
 
-    function getPoolTokenInfo(
-        bytes32 poolId,
-        IERC20 token
-    )
+    function getPoolTokenInfo(bytes32 poolId, IERC20 token)
         external
         view
-        returns (
-            uint256 cash,
-            uint256 managed,
-            uint256 lastChangeBlock,
-            address assetManager
-        );
+        returns (uint256 cash, uint256 managed, uint256 lastChangeBlock, address assetManager);
 
-    function getPoolTokens(
-        bytes32 poolId
-    )
+    function getPoolTokens(bytes32 poolId)
         external
         view
-        returns (
-            IERC20[] memory tokens,
-            uint256[] memory balances,
-            uint256 lastChangeBlock
-        );
+        returns (IERC20[] memory tokens, uint256[] memory balances, uint256 lastChangeBlock);
 
-    function joinPool(
-        bytes32 poolId,
-        address sender,
-        address recipient,
-        JoinPoolRequest memory request
-    ) external payable;
+    function joinPool(bytes32 poolId, address sender, address recipient, JoinPoolRequest memory request)
+        external
+        payable;
 
     struct JoinPoolRequest {
         IAsset[] assets;
@@ -207,12 +142,8 @@ interface IVault {
         bool fromInternalBalance;
     }
 
-    function exitPool(
-        bytes32 poolId,
-        address sender,
-        address payable recipient,
-        ExitPoolRequest memory request
-    ) external;
+    function exitPool(bytes32 poolId, address sender, address payable recipient, ExitPoolRequest memory request)
+        external;
 
     struct ExitPoolRequest {
         IAsset[] assets;
@@ -239,12 +170,10 @@ interface IVault {
         GIVEN_OUT
     }
 
-    function swap(
-        SingleSwap memory singleSwap,
-        FundManagement memory funds,
-        uint256 limit,
-        uint256 deadline
-    ) external payable returns (uint256);
+    function swap(SingleSwap memory singleSwap, FundManagement memory funds, uint256 limit, uint256 deadline)
+        external
+        payable
+        returns (uint256);
 
     struct SingleSwap {
         bytes32 poolId;
@@ -273,12 +202,9 @@ interface IVault {
     }
 
     event Swap(
-        bytes32 indexed poolId,
-        IERC20 indexed tokenIn,
-        IERC20 indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut
+        bytes32 indexed poolId, IERC20 indexed tokenIn, IERC20 indexed tokenOut, uint256 amountIn, uint256 amountOut
     );
+
     struct FundManagement {
         address sender;
         bool fromInternalBalance;
@@ -307,6 +233,7 @@ interface IVault {
         DEPOSIT,
         UPDATE
     }
+
     event PoolBalanceManaged(
         bytes32 indexed poolId,
         address indexed assetManager,

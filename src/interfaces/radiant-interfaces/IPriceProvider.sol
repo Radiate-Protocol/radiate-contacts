@@ -15,8 +15,5 @@ interface IPriceProvider {
 
     function update() external;
 
-    function baseTokenPriceInUsdProxyAggregator()
-        external
-        view
-        returns (address);
+    function baseTokenPriceInUsdProxyAggregator() external view returns (address);
 }

@@ -63,7 +63,7 @@ contract ZuniswapV2Pair is ERC20, Math {
     }
 
     function mint(address to) public returns (uint256 liquidity) {
-        (uint112 reserve0_, uint112 reserve1_, ) = getReserves();
+        (uint112 reserve0_, uint112 reserve1_,) = getReserves();
         uint256 balance0 = IERC20(token0).balanceOf(address(this));
         uint256 balance1 = IERC20(token1).balanceOf(address(this));
         uint256 amount0 = balance0 - reserve0_;
@@ -73,10 +73,7 @@ contract ZuniswapV2Pair is ERC20, Math {
             liquidity = Math.sqrt(amount0 * amount1) - MINIMUM_LIQUIDITY;
             _mint(address(0), MINIMUM_LIQUIDITY);
         } else {
-            liquidity = Math.min(
-                (amount0 * totalSupply) / reserve0_,
-                (amount1 * totalSupply) / reserve1_
-            );
+            liquidity = Math.min((amount0 * totalSupply) / reserve0_, (amount1 * totalSupply) / reserve1_);
         }
 
         if (liquidity <= 0) revert InsufficientLiquidityMinted();
@@ -106,38 +103,30 @@ contract ZuniswapV2Pair is ERC20, Math {
         balance0 = IERC20(token0).balanceOf(address(this));
         balance1 = IERC20(token1).balanceOf(address(this));
 
-        (uint112 reserve0_, uint112 reserve1_, ) = getReserves();
+        (uint112 reserve0_, uint112 reserve1_,) = getReserves();
         _update(balance0, balance1, reserve0_, reserve1_);
 
         emit Burn(msg.sender, amount0, amount1, to);
     }
 
-    function swap(
-        uint256 amount0Out,
-        uint256 amount1Out,
-        address to,
-        bytes calldata data
-    ) public nonReentrant {
+    function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata data) public nonReentrant {
         if (amount0Out == 0 && amount1Out == 0) revert InsufficientOutputAmount();
 
-        (uint112 reserve0_, uint112 reserve1_, ) = getReserves();
+        (uint112 reserve0_, uint112 reserve1_,) = getReserves();
 
         if (amount0Out > reserve0_ || amount1Out > reserve1_) revert InsufficientLiquidity();
 
         if (amount0Out > 0) _safeTransfer(token0, to, amount0Out);
         if (amount1Out > 0) _safeTransfer(token1, to, amount1Out);
-        if (data.length > 0)
+        if (data.length > 0) {
             IZuniswapV2Callee(to).zuniswapV2Call(msg.sender, amount0Out, amount1Out, data);
+        }
 
         uint256 balance0 = IERC20(token0).balanceOf(address(this));
         uint256 balance1 = IERC20(token1).balanceOf(address(this));
 
-        uint256 amount0In = balance0 > reserve0 - amount0Out
-            ? balance0 - (reserve0 - amount0Out)
-            : 0;
-        uint256 amount1In = balance1 > reserve1 - amount1Out
-            ? balance1 - (reserve1 - amount1Out)
-            : 0;
+        uint256 amount0In = balance0 > reserve0 - amount0Out ? balance0 - (reserve0 - amount0Out) : 0;
+        uint256 amount1In = balance1 > reserve1 - amount1Out ? balance1 - (reserve1 - amount1Out) : 0;
 
         if (amount0In == 0 && amount1In == 0) revert InsufficientInputAmount();
 
@@ -145,10 +134,9 @@ contract ZuniswapV2Pair is ERC20, Math {
         uint256 balance0Adjusted = (balance0 * 1000) - (amount0In * 3);
         uint256 balance1Adjusted = (balance1 * 1000) - (amount1In * 3);
 
-        if (
-            balance0Adjusted * balance1Adjusted <
-            uint256(reserve0_) * uint256(reserve1_) * (1000**2)
-        ) revert InvalidK();
+        if (balance0Adjusted * balance1Adjusted < uint256(reserve0_) * uint256(reserve1_) * (1000 ** 2)) {
+            revert InvalidK();
+        }
 
         _update(balance0, balance1, reserve0_, reserve1_);
 
@@ -156,24 +144,11 @@ contract ZuniswapV2Pair is ERC20, Math {
     }
 
     function sync() public {
-        (uint112 reserve0_, uint112 reserve1_, ) = getReserves();
-        _update(
-            IERC20(token0).balanceOf(address(this)),
-            IERC20(token1).balanceOf(address(this)),
-            reserve0_,
-            reserve1_
-        );
+        (uint112 reserve0_, uint112 reserve1_,) = getReserves();
+        _update(IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this)), reserve0_, reserve1_);
     }
 
-    function getReserves()
-        public
-        view
-        returns (
-            uint112,
-            uint112,
-            uint32
-        )
-    {
+    function getReserves() public view returns (uint112, uint112, uint32) {
         return (reserve0, reserve1, blockTimestampLast);
     }
 
@@ -184,24 +159,15 @@ contract ZuniswapV2Pair is ERC20, Math {
     //
     //
     //
-    function _update(
-        uint256 balance0,
-        uint256 balance1,
-        uint112 reserve0_,
-        uint112 reserve1_
-    ) private {
+    function _update(uint256 balance0, uint256 balance1, uint112 reserve0_, uint112 reserve1_) private {
         if (balance0 > type(uint112).max || balance1 > type(uint112).max) revert BalanceOverflow();
 
         unchecked {
             uint32 timeElapsed = uint32(block.timestamp) - blockTimestampLast;
 
             if (timeElapsed > 0 && reserve0_ > 0 && reserve1_ > 0) {
-                price0CumulativeLast +=
-                    uint256(UQ112x112.encode(reserve1_).uqdiv(reserve0_)) *
-                    timeElapsed;
-                price1CumulativeLast +=
-                    uint256(UQ112x112.encode(reserve0_).uqdiv(reserve1_)) *
-                    timeElapsed;
+                price0CumulativeLast += uint256(UQ112x112.encode(reserve1_).uqdiv(reserve0_)) * timeElapsed;
+                price1CumulativeLast += uint256(UQ112x112.encode(reserve0_).uqdiv(reserve1_)) * timeElapsed;
             }
         }
 
@@ -212,14 +178,8 @@ contract ZuniswapV2Pair is ERC20, Math {
         emit Sync(reserve0, reserve1);
     }
 
-    function _safeTransfer(
-        address token,
-        address to,
-        uint256 value
-    ) private {
-        (bool success, bytes memory data) = token.call(
-            abi.encodeWithSignature("transfer(address,uint256)", to, value)
-        );
+    function _safeTransfer(address token, address to, uint256 value) private {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSignature("transfer(address,uint256)", to, value));
         if (!success || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
     }
 }

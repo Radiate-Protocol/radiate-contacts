@@ -63,7 +63,7 @@ function ensureContract(address target_) view {
 // solhint-disable-next-line func-visibility
 function ensureValidKeycode(Keycode keycode_) pure {
     bytes5 unwrapped = Keycode.unwrap(keycode_);
-    for (uint256 i = 0; i < 5; ) {
+    for (uint256 i = 0; i < 5;) {
         bytes1 char = unwrapped[i];
         if (char < 0x41 || char > 0x5A) revert InvalidKeycode(keycode_); // A-Z only
         unchecked {
@@ -88,8 +88,9 @@ abstract contract KernelAdapter {
 
     /// @notice Modifier to restrict functions to be called only by kernel.
     modifier onlyKernel() {
-        if (msg.sender != address(kernel))
+        if (msg.sender != address(kernel)) {
             revert KernelAdapter_OnlyKernel(msg.sender);
+        }
         _;
     }
 
@@ -109,8 +110,9 @@ abstract contract Module is KernelAdapter {
 
     /// @notice Modifier to restrict which policies have access to module functions.
     modifier permissioned() {
-        if (!kernel.modulePermissions(KEYCODE(), Policy(msg.sender), msg.sig))
+        if (!kernel.modulePermissions(KEYCODE(), Policy(msg.sender), msg.sig)) {
             revert Module_PolicyNotPermitted(msg.sender);
+        }
         _;
     }
 
@@ -120,12 +122,7 @@ abstract contract Module is KernelAdapter {
     /// @notice Returns which semantic version of a module is being implemented.
     /// @return major - Major version upgrade indicates breaking change to the interface.
     /// @return minor - Minor version change retains backward-compatible interface.
-    function VERSION()
-        external
-        pure
-        virtual
-        returns (uint8 major, uint8 minor)
-    {}
+    function VERSION() external pure virtual returns (uint8 major, uint8 minor) {}
 
     /// @notice Initialization function for the module
     /// @dev    This function is called when the module is installed or upgraded by the kernel.
@@ -147,33 +144,21 @@ abstract contract Policy is KernelAdapter {
     }
 
     /// @notice Function to grab module address from a given keycode.
-    function getModuleAddress(
-        Keycode keycode_
-    ) internal view returns (address) {
-        address moduleForKeycode = address(
-            kernel.getModuleForKeycode(keycode_)
-        );
-        if (moduleForKeycode == address(0))
+    function getModuleAddress(Keycode keycode_) internal view returns (address) {
+        address moduleForKeycode = address(kernel.getModuleForKeycode(keycode_));
+        if (moduleForKeycode == address(0)) {
             revert Policy_ModuleDoesNotExist(keycode_);
+        }
         return moduleForKeycode;
     }
 
     /// @notice Define module dependencies for this policy.
     /// @return dependencies - Keycode array of module dependencies.
-    function configureDependencies()
-        external
-        virtual
-        returns (Keycode[] memory dependencies)
-    {}
+    function configureDependencies() external virtual returns (Keycode[] memory dependencies) {}
 
     /// @notice Function called by kernel to set module function permissions.
     /// @return requests - Array of keycodes and function selectors for requested permissions.
-    function requestPermissions()
-        external
-        view
-        virtual
-        returns (Permissions[] memory requests)
-    {}
+    function requestPermissions() external view virtual returns (Permissions[] memory requests) {}
 }
 
 /// @notice Main contract that acts as a central component registry for the protocol.
@@ -182,12 +167,7 @@ abstract contract Policy is KernelAdapter {
 contract Kernel {
     // =========  EVENTS ========= //
 
-    event PermissionsUpdated(
-        Keycode indexed keycode_,
-        Policy indexed policy_,
-        bytes4 funcSelector_,
-        bool granted_
-    );
+    event PermissionsUpdated(Keycode indexed keycode_, Policy indexed policy_, bytes4 funcSelector_, bool granted_);
     event ActionExecuted(Actions indexed action_, address indexed target_);
 
     // =========  ERRORS ========= //
@@ -222,8 +202,7 @@ contract Kernel {
 
     /// @notice Module <> Policy Permissions.
     /// @dev    Keycode -> Policy -> Function Selector -> bool for permission
-    mapping(Keycode => mapping(Policy => mapping(bytes4 => bool)))
-        public modulePermissions;
+    mapping(Keycode => mapping(Policy => mapping(bytes4 => bool))) public modulePermissions;
 
     // =========  POLICY MANAGEMENT ========= //
 
@@ -248,16 +227,11 @@ contract Kernel {
     }
 
     function isPolicyActive(Policy policy_) public view returns (bool) {
-        return
-            activePolicies.length > 0 &&
-            activePolicies[getPolicyIndex[policy_]] == policy_;
+        return activePolicies.length > 0 && activePolicies[getPolicyIndex[policy_]] == policy_;
     }
 
     /// @notice Main kernel function. Initiates state changes to kernel depending on Action passed in.
-    function executeAction(
-        Actions action_,
-        address target_
-    ) external onlyExecutor {
+    function executeAction(Actions action_, address target_) external onlyExecutor {
         if (action_ == Actions.InstallModule) {
             ensureContract(target_);
             ensureValidKeycode(Module(target_).KEYCODE());
@@ -285,8 +259,9 @@ contract Kernel {
     function _installModule(Module newModule_) internal {
         Keycode keycode = newModule_.KEYCODE();
 
-        if (address(getModuleForKeycode[keycode]) != address(0))
+        if (address(getModuleForKeycode[keycode]) != address(0)) {
             revert Kernel_ModuleAlreadyInstalled(keycode);
+        }
 
         getModuleForKeycode[keycode] = newModule_;
         getKeycodeForModule[newModule_] = keycode;
@@ -299,8 +274,9 @@ contract Kernel {
         Keycode keycode = newModule_.KEYCODE();
         Module oldModule = getModuleForKeycode[keycode];
 
-        if (address(oldModule) == address(0) || oldModule == newModule_)
+        if (address(oldModule) == address(0) || oldModule == newModule_) {
             revert Kernel_InvalidModuleUpgrade(keycode);
+        }
 
         getKeycodeForModule[oldModule] = Keycode.wrap(bytes5(0));
         getKeycodeForModule[newModule_] = keycode;
@@ -312,8 +288,9 @@ contract Kernel {
     }
 
     function _activatePolicy(Policy policy_) internal {
-        if (isPolicyActive(policy_))
+        if (isPolicyActive(policy_)) {
             revert Kernel_PolicyAlreadyActivated(address(policy_));
+        }
 
         // Add policy to list of active policies
         activePolicies.push(policy_);
@@ -323,13 +300,11 @@ contract Kernel {
         Keycode[] memory dependencies = policy_.configureDependencies();
         uint256 depLength = dependencies.length;
 
-        for (uint256 i; i < depLength; ) {
+        for (uint256 i; i < depLength;) {
             Keycode keycode = dependencies[i];
 
             moduleDependents[keycode].push(policy_);
-            getDependentIndex[keycode][policy_] =
-                moduleDependents[keycode].length -
-                1;
+            getDependentIndex[keycode][policy_] = moduleDependents[keycode].length - 1;
 
             unchecked {
                 ++i;
@@ -342,8 +317,9 @@ contract Kernel {
     }
 
     function _deactivatePolicy(Policy policy_) internal {
-        if (!isPolicyActive(policy_))
+        if (!isPolicyActive(policy_)) {
             revert Kernel_PolicyNotActivated(address(policy_));
+        }
 
         // Revoke permissions
         Permissions[] memory requests = policy_.requestPermissions();
@@ -367,7 +343,7 @@ contract Kernel {
     /// @dev    NOTE: Data does not get cleared from this kernel.
     function _migrateKernel(Kernel newKernel_) internal {
         uint256 keycodeLen = allKeycodes.length;
-        for (uint256 i; i < keycodeLen; ) {
+        for (uint256 i; i < keycodeLen;) {
             Module module = Module(getModuleForKeycode[allKeycodes[i]]);
             module.changeKernel(newKernel_);
             unchecked {
@@ -376,7 +352,7 @@ contract Kernel {
         }
 
         uint256 policiesLen = activePolicies.length;
-        for (uint256 j; j < policiesLen; ) {
+        for (uint256 j; j < policiesLen;) {
             Policy policy = activePolicies[j];
 
             // Deactivate before changing kernel
@@ -391,7 +367,7 @@ contract Kernel {
         Policy[] memory dependents = moduleDependents[keycode_];
         uint256 depLength = dependents.length;
 
-        for (uint256 i; i < depLength; ) {
+        for (uint256 i; i < depLength;) {
             dependents[i].configureDependencies();
 
             unchecked {
@@ -400,24 +376,13 @@ contract Kernel {
         }
     }
 
-    function _setPolicyPermissions(
-        Policy policy_,
-        Permissions[] memory requests_,
-        bool grant_
-    ) internal {
+    function _setPolicyPermissions(Policy policy_, Permissions[] memory requests_, bool grant_) internal {
         uint256 reqLength = requests_.length;
-        for (uint256 i = 0; i < reqLength; ) {
+        for (uint256 i = 0; i < reqLength;) {
             Permissions memory request = requests_[i];
-            modulePermissions[request.keycode][policy_][
-                request.funcSelector
-            ] = grant_;
+            modulePermissions[request.keycode][policy_][request.funcSelector] = grant_;
 
-            emit PermissionsUpdated(
-                request.keycode,
-                policy_,
-                request.funcSelector,
-                grant_
-            );
+            emit PermissionsUpdated(request.keycode, policy_, request.funcSelector, grant_);
 
             unchecked {
                 ++i;
@@ -429,7 +394,7 @@ contract Kernel {
         Keycode[] memory dependencies = policy_.configureDependencies();
         uint256 depcLength = dependencies.length;
 
-        for (uint256 i; i < depcLength; ) {
+        for (uint256 i; i < depcLength;) {
             Keycode keycode = dependencies[i];
             Policy[] storage dependents = moduleDependents[keycode];
 

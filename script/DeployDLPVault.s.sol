@@ -23,11 +23,13 @@ contract DeployDLPVault is Script {
         vm.startBroadcast();
 
         address impl = address(new DLPVault());
-        address proxy = address(new TransparentUpgradeableProxy(
+        address proxy = address(
+            new TransparentUpgradeableProxy(
             impl,
             proxyAdmin,
             abi.encodeWithSignature("initialize(address)", kernel)
-        ));
+            )
+        );
 
         vm.stopBroadcast();
 

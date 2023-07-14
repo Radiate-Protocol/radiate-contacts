@@ -7,31 +7,21 @@ interface IEligibilityDataProvider {
 
     function updatePrice() external;
 
-    function requiredEthValue(
-        address user
-    ) external view returns (uint256 required);
+    function requiredEthValue(address user) external view returns (uint256 required);
 
-    function isEligibleForRewards(
-        address _user
-    ) external view returns (bool isEligible);
+    function isEligibleForRewards(address _user) external view returns (bool isEligible);
 
-    function lastEligibleTime(
-        address user
-    ) external view returns (uint256 lastEligibleTimestamp);
+    function lastEligibleTime(address user) external view returns (uint256 lastEligibleTimestamp);
 
     function lockedUsdValue(address user) external view returns (uint256);
 
-    function requiredUsdValue(
-        address user
-    ) external view returns (uint256 required);
+    function requiredUsdValue(address user) external view returns (uint256 required);
 
     function lastEligibleStatus(address user) external view returns (bool);
 
     function isMarketDisqualified(address user) external view returns (bool);
 
-    function rewardEligibleAmount(
-        address token
-    ) external view returns (uint256);
+    function rewardEligibleAmount(address token) external view returns (uint256);
 
     function setDqTime(address _user, uint256 _time) external;
 

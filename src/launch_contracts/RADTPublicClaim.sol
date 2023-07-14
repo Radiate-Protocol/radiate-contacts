@@ -128,10 +128,7 @@ pragma solidity ^0.8.0;
 abstract contract Ownable is Context {
     address private _owner;
 
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /**
      * @dev Initializes the contract setting the deployer as the initial owner.
@@ -178,10 +175,7 @@ abstract contract Ownable is Context {
      * Can only be called by the current owner.
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(
-            newOwner != address(0),
-            "Ownable: new owner is the zero address"
-        );
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
         _transferOwnership(newOwner);
     }
 
@@ -218,11 +212,7 @@ interface IERC20 {
      * @dev Emitted when the allowance of a `spender` for an `owner` is set by
      * a call to {approve}. `value` is the new allowance.
      */
-    event Approval(
-        address indexed owner,
-        address indexed spender,
-        uint256 value
-    );
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 
     /**
      * @dev Returns the amount of tokens in existence.
@@ -250,10 +240,7 @@ interface IERC20 {
      *
      * This value changes when {approve} or {transferFrom} are called.
      */
-    function allowance(
-        address owner,
-        address spender
-    ) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
 
     /**
      * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
@@ -280,11 +267,7 @@ interface IERC20 {
      *
      * Emits a {Transfer} event.
      */
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
 // File: RADTClaim.sol
@@ -314,8 +297,7 @@ contract RADTClaim is Ownable, ReentrancyGuard {
     }
 
     IERC20 public RADT = IERC20(0x7CA0B5Ca80291B1fEB2d45702FFE56a7A53E7a97);
-    IRADTPresale public Presale =
-        IRADTPresale(0x69D75AA827D2c9ffD58758486fBB6B77277FA4dB);
+    IRADTPresale public Presale = IRADTPresale(0x69D75AA827D2c9ffD58758486fBB6B77277FA4dB);
 
     address[] public guestList = [
         0x04a9Ff56432fdB5F977A71d54ef77E98940F8436,
@@ -341,10 +323,7 @@ contract RADTClaim is Ownable, ReentrancyGuard {
     function claim(address _beneficiary) external nonReentrant {
         // Check if beneficiary is in the guestList
         for (uint256 i = 0; i < guestList.length; i++) {
-            require(
-                _beneficiary != guestList[i],
-                "open a ticket and contact us on discord"
-            );
+            require(_beneficiary != guestList[i], "open a ticket and contact us on discord");
         }
 
         require(released, "not released yet");
@@ -372,11 +351,7 @@ contract RADTClaim is Ownable, ReentrancyGuard {
     }
 
     // recover unsupported tokens accidentally sent to the contract itself
-    function governanceRecoverUnsupported(
-        IERC20 _token,
-        address _to,
-        uint256 _amount
-    ) external onlyOwner {
+    function governanceRecoverUnsupported(IERC20 _token, address _to, uint256 _amount) external onlyOwner {
         _token.transfer(_to, _amount);
     }
 }

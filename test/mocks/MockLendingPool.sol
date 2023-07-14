@@ -21,22 +21,15 @@ contract MockLendingPool {
     }
 
     function withdraw(uint256 amount) external {
-        require(
-            depositBalances[msg.sender] >= amount,
-            "MockLendingPool: Insufficient deposit balance."
-        );
+        require(depositBalances[msg.sender] >= amount, "MockLendingPool: Insufficient deposit balance.");
         depositBalances[msg.sender] -= amount;
         underlyingAsset.transfer(msg.sender, amount);
     }
 
     function borrow(uint256 amount) external {
+        require(borrowRates[msg.sender] > 0, "MockLendingPool: Borrow rate not set.");
         require(
-            borrowRates[msg.sender] > 0,
-            "MockLendingPool: Borrow rate not set."
-        );
-        require(
-            borrowBalances[msg.sender] + amount <=
-                depositBalances[msg.sender] * borrowRates[msg.sender],
+            borrowBalances[msg.sender] + amount <= depositBalances[msg.sender] * borrowRates[msg.sender],
             "MockLendingPool: Borrow limit exceeded."
         );
         borrowBalances[msg.sender] += amount;
@@ -44,10 +37,7 @@ contract MockLendingPool {
     }
 
     function repay(uint256 amount) external {
-        require(
-            borrowBalances[msg.sender] >= amount,
-            "MockLendingPool: Insufficient borrow balance."
-        );
+        require(borrowBalances[msg.sender] >= amount, "MockLendingPool: Insufficient borrow balance.");
         borrowBalances[msg.sender] -= amount;
         underlyingAsset.transferFrom(msg.sender, address(this), amount);
     }
@@ -61,10 +51,7 @@ contract MockLendingPool {
     }
 
     function liquidate(address user) external {
-        require(
-            borrowBalances[user] > liquidationThresholds[user],
-            "MockLendingPool: Cannot liquidate user."
-        );
+        require(borrowBalances[user] > liquidationThresholds[user], "MockLendingPool: Cannot liquidate user.");
         uint256 amount = borrowBalances[user];
         borrowBalances[user] = 0;
         depositBalances[user] -= amount;

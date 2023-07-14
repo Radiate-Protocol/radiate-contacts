@@ -128,10 +128,7 @@ pragma solidity ^0.8.0;
 abstract contract Ownable is Context {
     address private _owner;
 
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /**
      * @dev Initializes the contract setting the deployer as the initial owner.
@@ -178,10 +175,7 @@ abstract contract Ownable is Context {
      * Can only be called by the current owner.
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(
-            newOwner != address(0),
-            "Ownable: new owner is the zero address"
-        );
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
         _transferOwnership(newOwner);
     }
 
@@ -218,10 +212,7 @@ library SafeMath {
      *
      * _Available since v3.4._
      */
-    function tryAdd(
-        uint256 a,
-        uint256 b
-    ) internal pure returns (bool, uint256) {
+    function tryAdd(uint256 a, uint256 b) internal pure returns (bool, uint256) {
         unchecked {
             uint256 c = a + b;
             if (c < a) return (false, 0);
@@ -234,10 +225,7 @@ library SafeMath {
      *
      * _Available since v3.4._
      */
-    function trySub(
-        uint256 a,
-        uint256 b
-    ) internal pure returns (bool, uint256) {
+    function trySub(uint256 a, uint256 b) internal pure returns (bool, uint256) {
         unchecked {
             if (b > a) return (false, 0);
             return (true, a - b);
@@ -249,10 +237,7 @@ library SafeMath {
      *
      * _Available since v3.4._
      */
-    function tryMul(
-        uint256 a,
-        uint256 b
-    ) internal pure returns (bool, uint256) {
+    function tryMul(uint256 a, uint256 b) internal pure returns (bool, uint256) {
         unchecked {
             // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
             // benefit is lost if 'b' is also tested.
@@ -269,10 +254,7 @@ library SafeMath {
      *
      * _Available since v3.4._
      */
-    function tryDiv(
-        uint256 a,
-        uint256 b
-    ) internal pure returns (bool, uint256) {
+    function tryDiv(uint256 a, uint256 b) internal pure returns (bool, uint256) {
         unchecked {
             if (b == 0) return (false, 0);
             return (true, a / b);
@@ -284,10 +266,7 @@ library SafeMath {
      *
      * _Available since v3.4._
      */
-    function tryMod(
-        uint256 a,
-        uint256 b
-    ) internal pure returns (bool, uint256) {
+    function tryMod(uint256 a, uint256 b) internal pure returns (bool, uint256) {
         unchecked {
             if (b == 0) return (false, 0);
             return (true, a % b);
@@ -379,11 +358,7 @@ library SafeMath {
      *
      * - Subtraction cannot overflow.
      */
-    function sub(
-        uint256 a,
-        uint256 b,
-        string memory errorMessage
-    ) internal pure returns (uint256) {
+    function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
         unchecked {
             require(b <= a, errorMessage);
             return a - b;
@@ -402,11 +377,7 @@ library SafeMath {
      *
      * - The divisor cannot be zero.
      */
-    function div(
-        uint256 a,
-        uint256 b,
-        string memory errorMessage
-    ) internal pure returns (uint256) {
+    function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
         unchecked {
             require(b > 0, errorMessage);
             return a / b;
@@ -428,11 +399,7 @@ library SafeMath {
      *
      * - The divisor cannot be zero.
      */
-    function mod(
-        uint256 a,
-        uint256 b,
-        string memory errorMessage
-    ) internal pure returns (uint256) {
+    function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
         unchecked {
             require(b > 0, errorMessage);
             return a % b;
@@ -501,16 +468,10 @@ library Address {
      * https://solidity.readthedocs.io/en/v0.5.11/security-considerations.html#use-the-checks-effects-interactions-pattern[checks-effects-interactions pattern].
      */
     function sendValue(address payable recipient, uint256 amount) internal {
-        require(
-            address(this).balance >= amount,
-            "Address: insufficient balance"
-        );
+        require(address(this).balance >= amount, "Address: insufficient balance");
 
-        (bool success, ) = recipient.call{value: amount}("");
-        require(
-            success,
-            "Address: unable to send value, recipient may have reverted"
-        );
+        (bool success,) = recipient.call{value: amount}("");
+        require(success, "Address: unable to send value, recipient may have reverted");
     }
 
     /**
@@ -531,17 +492,8 @@ library Address {
      *
      * _Available since v3.1._
      */
-    function functionCall(
-        address target,
-        bytes memory data
-    ) internal returns (bytes memory) {
-        return
-            functionCallWithValue(
-                target,
-                data,
-                0,
-                "Address: low-level call failed"
-            );
+    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
+        return functionCallWithValue(target, data, 0, "Address: low-level call failed");
     }
 
     /**
@@ -550,11 +502,10 @@ library Address {
      *
      * _Available since v3.1._
      */
-    function functionCall(
-        address target,
-        bytes memory data,
-        string memory errorMessage
-    ) internal returns (bytes memory) {
+    function functionCall(address target, bytes memory data, string memory errorMessage)
+        internal
+        returns (bytes memory)
+    {
         return functionCallWithValue(target, data, 0, errorMessage);
     }
 
@@ -569,18 +520,8 @@ library Address {
      *
      * _Available since v3.1._
      */
-    function functionCallWithValue(
-        address target,
-        bytes memory data,
-        uint256 value
-    ) internal returns (bytes memory) {
-        return
-            functionCallWithValue(
-                target,
-                data,
-                value,
-                "Address: low-level call with value failed"
-            );
+    function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
+        return functionCallWithValue(target, data, value, "Address: low-level call with value failed");
     }
 
     /**
@@ -589,26 +530,13 @@ library Address {
      *
      * _Available since v3.1._
      */
-    function functionCallWithValue(
-        address target,
-        bytes memory data,
-        uint256 value,
-        string memory errorMessage
-    ) internal returns (bytes memory) {
-        require(
-            address(this).balance >= value,
-            "Address: insufficient balance for call"
-        );
-        (bool success, bytes memory returndata) = target.call{value: value}(
-            data
-        );
-        return
-            verifyCallResultFromTarget(
-                target,
-                success,
-                returndata,
-                errorMessage
-            );
+    function functionCallWithValue(address target, bytes memory data, uint256 value, string memory errorMessage)
+        internal
+        returns (bytes memory)
+    {
+        require(address(this).balance >= value, "Address: insufficient balance for call");
+        (bool success, bytes memory returndata) = target.call{value: value}(data);
+        return verifyCallResultFromTarget(target, success, returndata, errorMessage);
     }
 
     /**
@@ -617,16 +545,8 @@ library Address {
      *
      * _Available since v3.3._
      */
-    function functionStaticCall(
-        address target,
-        bytes memory data
-    ) internal view returns (bytes memory) {
-        return
-            functionStaticCall(
-                target,
-                data,
-                "Address: low-level static call failed"
-            );
+    function functionStaticCall(address target, bytes memory data) internal view returns (bytes memory) {
+        return functionStaticCall(target, data, "Address: low-level static call failed");
     }
 
     /**
@@ -635,19 +555,13 @@ library Address {
      *
      * _Available since v3.3._
      */
-    function functionStaticCall(
-        address target,
-        bytes memory data,
-        string memory errorMessage
-    ) internal view returns (bytes memory) {
+    function functionStaticCall(address target, bytes memory data, string memory errorMessage)
+        internal
+        view
+        returns (bytes memory)
+    {
         (bool success, bytes memory returndata) = target.staticcall(data);
-        return
-            verifyCallResultFromTarget(
-                target,
-                success,
-                returndata,
-                errorMessage
-            );
+        return verifyCallResultFromTarget(target, success, returndata, errorMessage);
     }
 
     /**
@@ -656,16 +570,8 @@ library Address {
      *
      * _Available since v3.4._
      */
-    function functionDelegateCall(
-        address target,
-        bytes memory data
-    ) internal returns (bytes memory) {
-        return
-            functionDelegateCall(
-                target,
-                data,
-                "Address: low-level delegate call failed"
-            );
+    function functionDelegateCall(address target, bytes memory data) internal returns (bytes memory) {
+        return functionDelegateCall(target, data, "Address: low-level delegate call failed");
     }
 
     /**
@@ -674,19 +580,12 @@ library Address {
      *
      * _Available since v3.4._
      */
-    function functionDelegateCall(
-        address target,
-        bytes memory data,
-        string memory errorMessage
-    ) internal returns (bytes memory) {
+    function functionDelegateCall(address target, bytes memory data, string memory errorMessage)
+        internal
+        returns (bytes memory)
+    {
         (bool success, bytes memory returndata) = target.delegatecall(data);
-        return
-            verifyCallResultFromTarget(
-                target,
-                success,
-                returndata,
-                errorMessage
-            );
+        return verifyCallResultFromTarget(target, success, returndata, errorMessage);
     }
 
     /**
@@ -719,11 +618,11 @@ library Address {
      *
      * _Available since v4.3._
      */
-    function verifyCallResult(
-        bool success,
-        bytes memory returndata,
-        string memory errorMessage
-    ) internal pure returns (bytes memory) {
+    function verifyCallResult(bool success, bytes memory returndata, string memory errorMessage)
+        internal
+        pure
+        returns (bytes memory)
+    {
         if (success) {
             return returndata;
         } else {
@@ -731,10 +630,7 @@ library Address {
         }
     }
 
-    function _revert(
-        bytes memory returndata,
-        string memory errorMessage
-    ) private pure {
+    function _revert(bytes memory returndata, string memory errorMessage) private pure {
         // Look for revert reason and bubble it up if present
         if (returndata.length > 0) {
             // The easiest way to bubble the revert reason is using memory via assembly
@@ -785,15 +681,8 @@ interface IERC20Permit {
      * https://eips.ethereum.org/EIPS/eip-2612#specification[relevant EIP
      * section].
      */
-    function permit(
-        address owner,
-        address spender,
-        uint256 value,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external;
+    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external;
 
     /**
      * @dev Returns the current nonce for `owner`. This value must be
@@ -833,11 +722,7 @@ interface IERC20 {
      * @dev Emitted when the allowance of a `spender` for an `owner` is set by
      * a call to {approve}. `value` is the new allowance.
      */
-    event Approval(
-        address indexed owner,
-        address indexed spender,
-        uint256 value
-    );
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 
     /**
      * @dev Returns the amount of tokens in existence.
@@ -865,10 +750,7 @@ interface IERC20 {
      *
      * This value changes when {approve} or {transferFrom} are called.
      */
-    function allowance(
-        address owner,
-        address spender
-    ) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
 
     /**
      * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
@@ -895,11 +777,7 @@ interface IERC20 {
      *
      * Emits a {Transfer} event.
      */
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
 // File: @openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
@@ -921,22 +799,11 @@ library SafeERC20 {
     using Address for address;
 
     function safeTransfer(IERC20 token, address to, uint256 value) internal {
-        _callOptionalReturn(
-            token,
-            abi.encodeWithSelector(token.transfer.selector, to, value)
-        );
+        _callOptionalReturn(token, abi.encodeWithSelector(token.transfer.selector, to, value));
     }
 
-    function safeTransferFrom(
-        IERC20 token,
-        address from,
-        address to,
-        uint256 value
-    ) internal {
-        _callOptionalReturn(
-            token,
-            abi.encodeWithSelector(token.transferFrom.selector, from, to, value)
-        );
+    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
+        _callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
     }
 
     /**
@@ -946,11 +813,7 @@ library SafeERC20 {
      * Whenever possible, use {safeIncreaseAllowance} and
      * {safeDecreaseAllowance} instead.
      */
-    function safeApprove(
-        IERC20 token,
-        address spender,
-        uint256 value
-    ) internal {
+    function safeApprove(IERC20 token, address spender, uint256 value) internal {
         // safeApprove should only be called when setting an initial allowance,
         // or when resetting it to zero. To increase and decrease it, use
         // 'safeIncreaseAllowance' and 'safeDecreaseAllowance'
@@ -958,48 +821,20 @@ library SafeERC20 {
             (value == 0) || (token.allowance(address(this), spender) == 0),
             "SafeERC20: approve from non-zero to non-zero allowance"
         );
-        _callOptionalReturn(
-            token,
-            abi.encodeWithSelector(token.approve.selector, spender, value)
-        );
+        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, value));
     }
 
-    function safeIncreaseAllowance(
-        IERC20 token,
-        address spender,
-        uint256 value
-    ) internal {
+    function safeIncreaseAllowance(IERC20 token, address spender, uint256 value) internal {
         uint256 newAllowance = token.allowance(address(this), spender) + value;
-        _callOptionalReturn(
-            token,
-            abi.encodeWithSelector(
-                token.approve.selector,
-                spender,
-                newAllowance
-            )
-        );
+        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, newAllowance));
     }
 
-    function safeDecreaseAllowance(
-        IERC20 token,
-        address spender,
-        uint256 value
-    ) internal {
+    function safeDecreaseAllowance(IERC20 token, address spender, uint256 value) internal {
         unchecked {
             uint256 oldAllowance = token.allowance(address(this), spender);
-            require(
-                oldAllowance >= value,
-                "SafeERC20: decreased allowance below zero"
-            );
+            require(oldAllowance >= value, "SafeERC20: decreased allowance below zero");
             uint256 newAllowance = oldAllowance - value;
-            _callOptionalReturn(
-                token,
-                abi.encodeWithSelector(
-                    token.approve.selector,
-                    spender,
-                    newAllowance
-                )
-            );
+            _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, newAllowance));
         }
     }
 
@@ -1016,10 +851,7 @@ library SafeERC20 {
         uint256 nonceBefore = token.nonces(owner);
         token.permit(owner, spender, value, deadline, v, r, s);
         uint256 nonceAfter = token.nonces(owner);
-        require(
-            nonceAfter == nonceBefore + 1,
-            "SafeERC20: permit did not succeed"
-        );
+        require(nonceAfter == nonceBefore + 1, "SafeERC20: permit did not succeed");
     }
 
     /**
@@ -1033,16 +865,10 @@ library SafeERC20 {
         // we're implementing it ourselves. We use {Address-functionCall} to perform this call, which verifies that
         // the target address contains contract code and also asserts for success in the low-level call.
 
-        bytes memory returndata = address(token).functionCall(
-            data,
-            "SafeERC20: low-level call failed"
-        );
+        bytes memory returndata = address(token).functionCall(data, "SafeERC20: low-level call failed");
         if (returndata.length > 0) {
             // Return data is optional
-            require(
-                abi.decode(returndata, (bool)),
-                "SafeERC20: ERC20 operation did not succeed"
-            );
+            require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation did not succeed");
         }
     }
 }
@@ -1061,17 +887,17 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
         uint256 amount; // How many LP tokens the user has provided.
         uint256 rewardDebt; // Reward debt. See explanation below.
         uint256 RPrewardDebt; // Reward debt. See explanation below.
-        //
-        // We do some fancy math here. Basically, any point in time, the amount of esRADTs
-        // entitled to a user but is pending to be distributed is:
-        //
-        //   pending reward = (user.amount * pool.accessRADTPerShare) - user.rewardDebt
-        //
-        // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-        //   1. The pool's `accessRADTPerShare` (and `lastRewardBlock`) gets updated.
-        //   2. User receives the pending reward sent to his/her address.
-        //   3. User's `amount` gets updated.
-        //   4. User's `rewardDebt` gets updated.
+            //
+            // We do some fancy math here. Basically, any point in time, the amount of esRADTs
+            // entitled to a user but is pending to be distributed is:
+            //
+            //   pending reward = (user.amount * pool.accessRADTPerShare) - user.rewardDebt
+            //
+            // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
+            //   1. The pool's `accessRADTPerShare` (and `lastRewardBlock`) gets updated.
+            //   2. User receives the pending reward sent to his/her address.
+            //   3. User's `amount` gets updated.
+            //   4. User's `rewardDebt` gets updated.
     }
 
     // Info of each pool.
@@ -1084,7 +910,7 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
         uint256 accRPPerShare; //RPpershare
     }
 
-    IERC20 public esRADT = IERC20(0xDee7ED1e10F1956E23EE2df2908101B39bB6808f);
+    IERC20 public esRADT;
 
     // esRADT tokens created per block.
     uint256 public esRADTPerSecond;
@@ -1111,11 +937,8 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
 
-    constructor(
-        uint256 _esRADTPerSecond,
-        uint256 _RPPerSecond,
-        uint256 _startTime
-    ) {
+    constructor(uint256 _esRADTPerSecond, uint256 _RPPerSecond, uint256 _startTime, IERC20 _esRADT) {
+        esRADT = _esRADT;
         esRADTPerSecond = _esRADTPerSecond;
         startTime = _startTime;
         RPPerSecond = _RPPerSecond;
@@ -1141,10 +964,7 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
     // Changes esRADT token reward per second, with a cap of maxesRADT per second
     // Good practice to update pools without messing up the contract
     function setesRADTPerSecond(uint256 _esRADTPerSecond) external onlyOwner {
-        require(
-            _esRADTPerSecond <= maxesRADTPerSecond,
-            "setesRADTPerSecond: too many esRADTs!"
-        );
+        require(_esRADTPerSecond <= maxesRADTPerSecond, "setesRADTPerSecond: too many esRADTs!");
 
         // This MUST be done or pool rewards will be calculated with new esRADT per second
         // This could unfairly punish small pools that dont have frequent deposits/withdraws/harvests
@@ -1164,10 +984,7 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
     function checkForDuplicate(IERC20 _lpToken) internal view {
         uint256 length = poolInfo.length;
         for (uint256 _pid = 0; _pid < length; _pid++) {
-            require(
-                poolInfo[_pid].lpToken != _lpToken,
-                "add: pool already exists!!!!"
-            );
+            require(poolInfo[_pid].lpToken != _lpToken, "add: pool already exists!!!!");
         }
     }
 
@@ -1179,9 +996,7 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
 
         massUpdatePools();
 
-        uint256 lastRewardTime = block.timestamp > startTime
-            ? block.timestamp
-            : startTime;
+        uint256 lastRewardTime = block.timestamp > startTime ? block.timestamp : startTime;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
         poolInfo.push(
             PoolInfo({
@@ -1201,18 +1016,12 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
 
         massUpdatePools();
 
-        totalAllocPoint =
-            totalAllocPoint -
-            poolInfo[_pid].allocPoint +
-            _allocPoint;
+        totalAllocPoint = totalAllocPoint - poolInfo[_pid].allocPoint + _allocPoint;
         poolInfo[_pid].allocPoint = _allocPoint;
     }
 
     // Return reward multiplier over the given _from to _to block.
-    function getMultiplier(
-        uint256 _from,
-        uint256 _to
-    ) public view returns (uint256) {
+    function getMultiplier(uint256 _from, uint256 _to) public view returns (uint256) {
         _from = _from > startTime ? _from : startTime;
         if (_to < startTime) {
             return 0;
@@ -1221,50 +1030,30 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
     }
 
     // View function to see pending esRADTs on frontend.
-    function pendingesRADT(
-        uint256 _pid,
-        address _user
-    ) external view returns (uint256) {
+    function pendingesRADT(uint256 _pid, address _user) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accesRADTPerShare = pool.accesRADTPerShare;
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         uint256 total = lpSupply.add(pool.totalRP);
         if (block.timestamp > pool.lastRewardTime && lpSupply != 0) {
-            uint256 multiplier = getMultiplier(
-                pool.lastRewardTime,
-                block.timestamp
-            );
-            uint256 esRADTReward = multiplier
-                .mul(esRADTPerSecond)
-                .mul(pool.allocPoint)
-                .div(totalAllocPoint);
-            accesRADTPerShare = accesRADTPerShare.add(
-                esRADTReward.mul(1e12).div(total)
-            );
+            uint256 multiplier = getMultiplier(pool.lastRewardTime, block.timestamp);
+            uint256 esRADTReward = multiplier.mul(esRADTPerSecond).mul(pool.allocPoint).div(totalAllocPoint);
+            accesRADTPerShare = accesRADTPerShare.add(esRADTReward.mul(1e12).div(total));
         }
         uint256 userPoint = user.amount.add(user.RPamount);
         return userPoint.mul(accesRADTPerShare).div(1e12).sub(user.rewardDebt);
     }
 
-    function pendingRP(
-        uint256 _pid,
-        address _user
-    ) external view returns (uint256) {
+    function pendingRP(uint256 _pid, address _user) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accRPPerShare = pool.accRPPerShare;
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         uint256 total = lpSupply.add(pool.totalRP);
         if (block.timestamp > pool.lastRewardTime && lpSupply != 0) {
-            uint256 multiplier = getMultiplier(
-                pool.lastRewardTime,
-                block.timestamp
-            );
-            uint256 RPReward = multiplier
-                .mul(RPPerSecond)
-                .mul(pool.allocPoint)
-                .div(totalAllocPoint);
+            uint256 multiplier = getMultiplier(pool.lastRewardTime, block.timestamp);
+            uint256 RPReward = multiplier.mul(RPPerSecond).mul(pool.allocPoint).div(totalAllocPoint);
             accRPPerShare = accRPPerShare.add(RPReward.mul(1e12).div(total));
         }
         uint256 userPoint = user.amount.add(user.RPamount);
@@ -1291,23 +1080,11 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
             pool.lastRewardTime = block.timestamp;
             return;
         }
-        uint256 multiplier = getMultiplier(
-            pool.lastRewardTime,
-            block.timestamp
-        );
-        uint256 esRADTReward = multiplier
-            .mul(esRADTPerSecond)
-            .mul(pool.allocPoint)
-            .div(totalAllocPoint);
-        uint256 RPReward = multiplier.mul(RPPerSecond).mul(pool.allocPoint).div(
-            totalAllocPoint
-        );
-        pool.accesRADTPerShare = pool.accesRADTPerShare.add(
-            esRADTReward.mul(1e12).div(total)
-        );
-        pool.accRPPerShare = pool.accRPPerShare.add(
-            RPReward.mul(1e12).div(total)
-        );
+        uint256 multiplier = getMultiplier(pool.lastRewardTime, block.timestamp);
+        uint256 esRADTReward = multiplier.mul(esRADTPerSecond).mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 RPReward = multiplier.mul(RPPerSecond).mul(pool.allocPoint).div(totalAllocPoint);
+        pool.accesRADTPerShare = pool.accesRADTPerShare.add(esRADTReward.mul(1e12).div(total));
+        pool.accRPPerShare = pool.accRPPerShare.add(RPReward.mul(1e12).div(total));
         pool.lastRewardTime = block.timestamp;
     }
 
@@ -1320,12 +1097,8 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
         updatePool(_pid);
 
         uint256 userPoint = user.amount.add(user.RPamount);
-        uint256 pending = userPoint.mul(pool.accesRADTPerShare).div(1e12).sub(
-            user.rewardDebt
-        );
-        uint256 RPpending = userPoint.mul(pool.accRPPerShare).div(1e12).sub(
-            user.RPrewardDebt
-        );
+        uint256 pending = userPoint.mul(pool.accesRADTPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 RPpending = userPoint.mul(pool.accRPPerShare).div(1e12).sub(user.RPrewardDebt);
 
         user.amount = user.amount.add(_amount).sub(fee);
         user.RPamount = user.RPamount.add(RPpending);
@@ -1339,11 +1112,7 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
         if (pending > 0) {
             safeesRADTTransfer(msg.sender, pending);
         }
-        pool.lpToken.safeTransferFrom(
-            address(msg.sender),
-            address(this),
-            _amount
-        );
+        pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
         pool.lpToken.safeTransfer(owner(), fee);
         emit Deposit(msg.sender, _pid, _amount);
     }
@@ -1359,9 +1128,7 @@ contract rdLPstaking is Ownable, ReentrancyGuard {
         updatePool(_pid);
 
         uint256 userPoint = user.amount.add(user.RPamount);
-        uint256 pending = userPoint.mul(pool.accesRADTPerShare).div(1e12).sub(
-            user.rewardDebt
-        );
+        uint256 pending = userPoint.mul(pool.accesRADTPerShare).div(1e12).sub(user.rewardDebt);
 
         user.amount = user.amount.sub(_amount);
 

@@ -9,7 +9,6 @@ import "lib/openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
 // forge script DeployProxyAdmin --rpc-url $ARBITRUM_RPC_URL --broadcast --verify -slow -vv
 // forge script DeployProxyAdmin --rpc-url $ARBITRUM_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --skip-simulation --slow -vvvv
 contract DeployProxyAdmin is Script {
-
     function run() public {
         console2.log("Broadcast sender", msg.sender);
 

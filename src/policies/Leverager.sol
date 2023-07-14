@@ -34,16 +34,13 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     // =========  STATE ========= //
     address internal TRSRY;
     bool public emergencyUnlooping;
-    ERC20 public constant DLP =
-        ERC20(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
+    ERC20 public constant DLP = ERC20(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
 
     /// @notice Lending Pool address
-    ILendingPool public constant lendingPool =
-        ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
+    ILendingPool public constant lendingPool = ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
 
     /// @notice Aave lending pool address (for flashloans)
-    IPool public constant aaveLendingPool =
-        IPool(0x794a61358D6845594F94dc1DB02A252b5b4814aD);
+    IPool public constant aaveLendingPool = IPool(0x794a61358D6845594F94dc1DB02A252b5b4814aD);
     uint256 public constant RATIO_DIVISOR = 1e6;
 
     uint256 public immutable minAmountToInvest;
@@ -61,16 +58,9 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
         Kernel _kernel
     )
         Policy(_kernel)
-        ERC4626(
-            _asset,
-            string(abi.encodePacked("Radiate ", _asset.name)),
-            string(abi.encodePacked("rd-", _asset.symbol))
-        )
+        ERC4626(_asset, string(abi.encodePacked("Radiate ", _asset.name)), string(abi.encodePacked("rd-", _asset.symbol)))
     {
-        require(
-            _minAmountToInvest > 0,
-            "Leverager: minAmountToInvest must be greater than 0"
-        );
+        require(_minAmountToInvest > 0, "Leverager: minAmountToInvest must be greater than 0");
         minAmountToInvest = _minAmountToInvest;
         vaultCap = _vaultCap;
         loopCount = _loopCount;
@@ -82,11 +72,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     //                                     DEFAULT OVERRIDES                                      //
     //============================================================================================//
 
-    function configureDependencies()
-        external
-        override
-        returns (Keycode[] memory dependencies)
-    {
+    function configureDependencies() external override returns (Keycode[] memory dependencies) {
         dependencies = new Keycode[](2);
         dependencies[0] = toKeycode("ROLES");
         dependencies[1] = toKeycode("TRSRY");
@@ -94,12 +80,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
         TRSRY = getModuleAddress(dependencies[1]);
     }
 
-    function requestPermissions()
-        external
-        pure
-        override
-        returns (Permissions[] memory requests)
-    {
+    function requestPermissions() external pure override returns (Permissions[] memory requests) {
         requests = new Permissions[](0);
     }
 
@@ -127,9 +108,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     }
 
     /// @dev Change borrow ratio for any new deposits
-    function changeBorrowRatio(
-        uint256 _borrowRatio
-    ) external onlyRole("admin") {
+    function changeBorrowRatio(uint256 _borrowRatio) external onlyRole("admin") {
         borrowRatio = _borrowRatio;
         emit BorrowRatioChanged(_borrowRatio);
     }
@@ -142,10 +121,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
         emit EmergencyUnloop(_amount);
     }
 
-    function recoverERC20(
-        ERC20 token,
-        uint256 tokenAmount
-    ) external onlyRole("admin") {
+    function recoverERC20(ERC20 token, uint256 tokenAmount) external onlyRole("admin") {
         if (token == asset && emergencyUnlooping) {
             revert Leverager_CANNOT_WITHDRAW_AFTER_EMERGENCY_UNLOOP();
         }
@@ -162,9 +138,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      * @return The configuration of the reserve
      *
      */
-    function getConfiguration(
-        address asset_
-    ) public view returns (DataTypes.ReserveConfigurationMap memory) {
+    function getConfiguration(address asset_) public view returns (DataTypes.ReserveConfigurationMap memory) {
         return lendingPool.getConfiguration(asset_);
     }
 
@@ -175,9 +149,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      *
      */
     function getVDebtToken(address asset_) public view returns (address) {
-        DataTypes.ReserveData memory reserveData = lendingPool.getReserveData(
-            asset_
-        );
+        DataTypes.ReserveData memory reserveData = lendingPool.getReserveData(asset_);
         return reserveData.variableDebtTokenAddress;
     }
 
@@ -188,8 +160,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      *
      */
     function ltv(address asset_) public view returns (uint256) {
-        DataTypes.ReserveConfigurationMap memory conf = lendingPool
-            .getConfiguration(asset_);
+        DataTypes.ReserveConfigurationMap memory conf = lendingPool.getConfiguration(asset_);
         return conf.data % (2 ** 16);
     }
 
@@ -198,8 +169,9 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      *
      */
     function _loop() internal {
-        if (borrowRatio <= RATIO_DIVISOR)
+        if (borrowRatio <= RATIO_DIVISOR) {
             revert Leverager_ERROR_BORROW_RATIO(borrowRatio);
+        }
 
         uint16 referralCode = 0;
         uint256 amount = asset.balanceOf(address(this));
@@ -212,20 +184,9 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
         }
         for (uint256 i = 0; i < loopCount; i += 1) {
             amount = (amount * borrowRatio) / RATIO_DIVISOR;
-            lendingPool.borrow(
-                address(asset),
-                amount,
-                interestRateMode,
-                referralCode,
-                address(dlpVault)
-            );
+            lendingPool.borrow(address(asset), amount, interestRateMode, referralCode, address(dlpVault));
 
-            lendingPool.deposit(
-                address(asset),
-                amount,
-                address(dlpVault),
-                referralCode
-            );
+            lendingPool.deposit(address(asset), amount, address(dlpVault), referralCode);
         }
     }
 
@@ -235,13 +196,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      */
     function _unloop(uint256 _amount) internal {
         bytes memory params = "";
-        aaveLendingPool.flashLoanSimple(
-            address(dlpVault),
-            address(asset),
-            _amount,
-            params,
-            0
-        );
+        aaveLendingPool.flashLoanSimple(address(dlpVault), address(asset), _amount, params, 0);
         emit Unloop(_amount);
     }
 

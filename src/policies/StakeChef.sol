@@ -56,11 +56,7 @@ contract StakeChef is Policy, RolesConsumer {
     //                                     DEFAULT OVERRIDES                                          //
     //============================================================================================//
 
-    function configureDependencies()
-        external
-        override
-        returns (Keycode[] memory dependencies)
-    {
+    function configureDependencies() external override returns (Keycode[] memory dependencies) {
         dependencies = new Keycode[](3);
         dependencies[0] = toKeycode("TOKEN");
         dependencies[1] = toKeycode("ROLES");
@@ -70,12 +66,7 @@ contract StakeChef is Policy, RolesConsumer {
         TRSRY = getModuleAddress(toKeycode("TRSRY"));
     }
 
-    function requestPermissions()
-        external
-        pure
-        override
-        returns (Permissions[] memory requests)
-    {
+    function requestPermissions() external pure override returns (Permissions[] memory requests) {
         requests = new Permissions[](0);
     }
 
@@ -90,18 +81,14 @@ contract StakeChef is Policy, RolesConsumer {
         endBlock = _endBlock;
     }
 
-    function updateRewardPerBlock(
-        uint256 _rewardPerBlock
-    ) public onlyRole("admin") {
+    function updateRewardPerBlock(uint256 _rewardPerBlock) public onlyRole("admin") {
         if (_rewardPerBlock >= SCALAR) {
             revert InvalidRewardPerBlock(_rewardPerBlock);
         }
         rewardPerBlock = _rewardPerBlock;
     }
 
-    function updateInterestPerBlock(
-        uint256 _interestPerBlock
-    ) public onlyRole("admin") {
+    function updateInterestPerBlock(uint256 _interestPerBlock) public onlyRole("admin") {
         if (_interestPerBlock >= SCALAR) {
             revert InvalidInterestRate(_interestPerBlock);
         }
@@ -140,9 +127,7 @@ contract StakeChef is Policy, RolesConsumer {
         if (_wethBalance > 0) {
             weth.transfer(TRSRY, _wethBalance);
         }
-        uint256 lastBlock = (block.timestamp < endBlock)
-            ? block.timestamp
-            : endBlock;
+        uint256 lastBlock = (block.timestamp < endBlock) ? block.timestamp : endBlock;
         uint256 multiplier = lastBlock - lastRewardBlock;
         uint256 reward = multiplier * rewardPerBlock;
         accRewardPerShare += reward / totalUserAssets;
@@ -177,9 +162,7 @@ contract StakeChef is Policy, RolesConsumer {
             revert WithdrawTooMuch(msg.sender, _amount);
         } else {
             totalUserAssets -= (_amount + _currentDebt); // todo check this
-            user.amount =
-                (user.interestDebt + user.amount) -
-                (_amount + _currentDebt);
+            user.amount = (user.interestDebt + user.amount) - (_amount + _currentDebt);
         }
         if (_amount != 0) {
             claimRewards(msg.sender);
@@ -230,15 +213,11 @@ contract StakeChef is Policy, RolesConsumer {
     //                                     VIEW                                                   //
     //============================================================================================//
 
-    function rewardsBalanceOf(
-        address _user
-    ) public view returns (uint256 _netRewards) {
+    function rewardsBalanceOf(address _user) public view returns (uint256 _netRewards) {
         UserInfo memory user = userInfo[_user];
         uint256 _accRewardPerShare = accRewardPerShare;
         uint256 _accDiscountPerShare = accDiscountPerShare;
-        uint256 lastBlock = (block.timestamp < endBlock)
-            ? block.timestamp
-            : endBlock;
+        uint256 lastBlock = (block.timestamp < endBlock) ? block.timestamp : endBlock;
         if (lastBlock > lastRewardBlock && totalUserAssets != 0) {
             uint256 multiplier = lastBlock - lastRewardBlock;
             uint256 reward = (multiplier * rewardPerBlock);
@@ -250,29 +229,20 @@ contract StakeChef is Policy, RolesConsumer {
 
         uint256 _currentAmount = user.amount + user.interestDebt;
         uint256 _interest = (user.amount * _accDiscountPerShare) / SCALAR;
-        uint256 _netOutput = (_currentAmount > _interest)
-            ? _currentAmount - _interest
-            : 0;
+        uint256 _netOutput = (_currentAmount > _interest) ? _currentAmount - _interest : 0;
 
-        uint256 _avgRewards = ((_currentAmount + _netOutput) *
-            _accRewardPerShare) / 2;
+        uint256 _avgRewards = ((_currentAmount + _netOutput) * _accRewardPerShare) / 2;
 
-        _netRewards = (user.rewardDebt < _avgRewards)
-            ? _avgRewards - user.rewardDebt
-            : 0;
+        _netRewards = (user.rewardDebt < _avgRewards) ? _avgRewards - user.rewardDebt : 0;
     }
 
     function balanceOf(address _user) public view returns (uint256) {
         UserInfo memory user = userInfo[_user];
         uint256 _accDiscountPerShare = accDiscountPerShare;
         // If endBlock has already passed
-        uint256 lastBlock = (block.timestamp < endBlock)
-            ? block.timestamp
-            : endBlock;
+        uint256 lastBlock = (block.timestamp < endBlock) ? block.timestamp : endBlock;
         if (lastBlock > lastRewardBlock && totalUserAssets != 0) {
-            _accDiscountPerShare +=
-                (lastBlock - lastRewardBlock) *
-                interestPerBlock;
+            _accDiscountPerShare += (lastBlock - lastRewardBlock) * interestPerBlock;
         }
         uint256 _currentAmount = user.amount + user.interestDebt;
         uint256 _interest = (user.amount * _accDiscountPerShare) / SCALAR;

@@ -11,11 +11,7 @@ contract Chest is Policy, RolesConsumer {
 
     Treasury public TRSRY;
 
-    function configureDependencies()
-        external
-        override
-        returns (Keycode[] memory dependencies)
-    {
+    function configureDependencies() external override returns (Keycode[] memory dependencies) {
         dependencies = new Keycode[](2);
         dependencies[0] = toKeycode("ROLES");
         dependencies[1] = toKeycode("TRSRY");
@@ -23,23 +19,12 @@ contract Chest is Policy, RolesConsumer {
         TRSRY = Treasury(getModuleAddress(dependencies[1]));
     }
 
-    function requestPermissions()
-        external
-        pure
-        override
-        returns (Permissions[] memory requests)
-    {
+    function requestPermissions() external pure override returns (Permissions[] memory requests) {
         requests = new Permissions[](1);
-        requests[0] = Permissions(
-            toKeycode("TRSRY"),
-            Treasury.withdraw.selector
-        );
+        requests[0] = Permissions(toKeycode("TRSRY"), Treasury.withdraw.selector);
     }
 
-    function withdraw(
-        ERC20 _token,
-        uint256 _amount
-    ) external onlyRole("admin") {
+    function withdraw(ERC20 _token, uint256 _amount) external onlyRole("admin") {
         TRSRY.withdraw(_token, _amount);
         _token.transfer(msg.sender, _amount);
     }

@@ -18,19 +18,16 @@ contract GelatoKeeper is Ownable {
     ///////////// STATE ///////////////
     IUniswapV2Router02 public immutable uniswapRouter;
     uint256 public constant RATIO_DIVISOR = 10000;
-    ILendingPool public constant pool =
-        ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
-    DLPVault public constant rdLP =
-        DLPVault(0xC6dC7749781F7Ba1e9424704B2904f2F94D3eb63);
-    ERC20 public constant WETH =
-        ERC20(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
+    ILendingPool public constant pool = ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
+    DLPVault public constant rdLP = DLPVault(0xC6dC7749781F7Ba1e9424704B2904f2F94D3eb63);
+    ERC20 public constant WETH = ERC20(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
 
     address public gelatoExecutor;
     uint256 public dlpAPY;
     IAToken[] public aTokens;
     IERC20[] public rewardTokens;
     ERC4626[] public vaults;
-    mapping(ERC4626 => uint) vaultAPY;
+    mapping(ERC4626 => uint256) vaultAPY;
     uint256 public lastExecuted;
 
     constructor(IUniswapV2Router02 _uniswapRouter) Ownable() {
@@ -46,10 +43,8 @@ contract GelatoKeeper is Ownable {
 
     function addRewardToken(IERC20[] memory _tokens) external onlyOwner {
         rewardTokens = _tokens;
-        for (uint i = 0; i < _tokens.length; i++) {
-            if (
-                _tokens[i].allowance(address(this), address(uniswapRouter)) == 0
-            ) {
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            if (_tokens[i].allowance(address(this), address(uniswapRouter)) == 0) {
                 _tokens[i].approve(address(uniswapRouter), type(uint256).max);
             }
         }
@@ -105,8 +100,7 @@ contract GelatoKeeper is Ownable {
 
         // Process rdLP rewards
         // TODO: @wooark rewrite with custom calculation
-        uint256 rewardAmt = (rdLP.totalAssets() * dlpAPY) / RATIO_DIVISOR >=
-            WETH.balanceOf(address(this))
+        uint256 rewardAmt = (rdLP.totalAssets() * dlpAPY) / RATIO_DIVISOR >= WETH.balanceOf(address(this))
             ? WETH.balanceOf(address(this))
             : (rdLP.totalAssets() * dlpAPY) / RATIO_DIVISOR;
 
@@ -115,7 +109,7 @@ contract GelatoKeeper is Ownable {
         rdLP.notifyRewardAmount(rewardAmt);
 
         // Process each vault reward
-        for (uint i = 0; i < vaults.length; i++) {
+        for (uint256 i = 0; i < vaults.length; i++) {
             if (rewardsNeeded[i] == 0) {
                 continue;
             } else {
@@ -128,41 +122,24 @@ contract GelatoKeeper is Ownable {
                     } else if (_balance == 0) {
                         // No reward tokens to swap
                         continue;
-                    } else if (
-                        _balance > 0 &&
-                        address(rewardTokens[j]) == address(vaults[i].asset())
-                    ) {
+                    } else if (_balance > 0 && address(rewardTokens[j]) == address(vaults[i].asset())) {
                         // pay out rewards with current balance of Reward token
-                        uint256 rewardPayoff = rewardsNeeded[i] <= _balance
-                            ? rewardsNeeded[i]
-                            : _balance;
+                        uint256 rewardPayoff = rewardsNeeded[i] <= _balance ? rewardsNeeded[i] : _balance;
                         rewardsNeeded[i] -= rewardPayoff;
-                        rewardTokens[i].transfer(
-                            address(vaults[i]),
-                            rewardPayoff
-                        );
+                        rewardTokens[i].transfer(address(vaults[i]), rewardPayoff);
                     } else {
                         // Approve is done when tokens are added
-                        uint256[] memory amounts = uniswapRouter
-                            .swapExactTokensForTokens(
-                                _balance,
-                                0, // slippage is ignored for simplicity
-                                getSwapPath(
-                                    address(rewardTokens[j]),
-                                    address(vaults[i].asset())
-                                ),
-                                address(this),
-                                block.timestamp
-                            );
-                        // pay out balance with any rewards
-                        uint256 rewardPayoff = rewardsNeeded[i] <= amounts[0]
-                            ? rewardsNeeded[i]
-                            : amounts[0];
-                        rewardsNeeded[i] = _balance - rewardPayoff;
-                        rewardTokens[i].transfer(
-                            address(vaults[i]),
-                            rewardPayoff
+                        uint256[] memory amounts = uniswapRouter.swapExactTokensForTokens(
+                            _balance,
+                            0, // slippage is ignored for simplicity
+                            getSwapPath(address(rewardTokens[j]), address(vaults[i].asset())),
+                            address(this),
+                            block.timestamp
                         );
+                        // pay out balance with any rewards
+                        uint256 rewardPayoff = rewardsNeeded[i] <= amounts[0] ? rewardsNeeded[i] : amounts[0];
+                        rewardsNeeded[i] = _balance - rewardPayoff;
+                        rewardTokens[i].transfer(address(vaults[i]), rewardPayoff);
                     }
                 }
             }
@@ -173,7 +150,7 @@ contract GelatoKeeper is Ownable {
     ///////////// INTERNAL FUNCTIONS ///////////////
 
     function processATokens() internal {
-        for (uint i = 0; i < aTokens.length; i++) {
+        for (uint256 i = 0; i < aTokens.length; i++) {
             address _underlying = aTokens[i].UNDERLYING_ASSET_ADDRESS();
 
             // Withdraw the aToken to get the underlying asset
@@ -185,15 +162,12 @@ contract GelatoKeeper is Ownable {
 
     function payAndCalculate() internal returns (uint256[] memory) {
         uint256[] memory rewardAmt = new uint256[](vaults.length);
-        for (uint i = 0; i < vaults.length; i++) {
-            rewardAmt[i] =
-                (vaultAPY[vaults[i]] * vaults[i].totalAssets()) /
-                RATIO_DIVISOR;
+        for (uint256 i = 0; i < vaults.length; i++) {
+            rewardAmt[i] = (vaultAPY[vaults[i]] * vaults[i].totalAssets()) / RATIO_DIVISOR;
 
             // pay out balance with any rewards
             // TODO: @wooark why is this?
-            uint256 rewardPayoff = rewardAmt[i] <=
-                rewardTokens[i].balanceOf(address(this))
+            uint256 rewardPayoff = rewardAmt[i] <= rewardTokens[i].balanceOf(address(this))
                 ? rewardAmt[i]
                 : rewardTokens[i].balanceOf(address(this));
             rewardAmt[i] -= rewardPayoff;
@@ -202,10 +176,7 @@ contract GelatoKeeper is Ownable {
         return rewardAmt;
     }
 
-    function getSwapPath(
-        address token0,
-        address token1
-    ) private pure returns (address[] memory) {
+    function getSwapPath(address token0, address token1) private pure returns (address[] memory) {
         address[] memory path = new address[](2);
         path[0] = token0;
         path[1] = token1;
@@ -227,10 +198,7 @@ contract GelatoKeeper is Ownable {
         if (lastExecuted > block.timestamp - 7 days) {
             return (false, "");
         } else {
-            return (
-                true,
-                abi.encodeWithSelector(this.disperseRewards.selector)
-            );
+            return (true, abi.encodeWithSelector(this.disperseRewards.selector));
         }
     }
 }

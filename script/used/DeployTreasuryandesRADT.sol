@@ -18,14 +18,8 @@ contract DeployTresasury is Script {
         kernel.executeAction(Actions.ActivatePolicy, address(chest));
         esRADT esradt = new esRADT();
         console2.log("New esradt address: ", address(esradt));
-        esradt.whitelistAddress(
-            0x94b23c2233BC7c9Fe75B22950335d7F792b00E8e,
-            true
-        ); //wl msig
-        esradt.whitelistAddress(
-            0xa50FC8Fc0b7845b07DCD00ef6bdE46E5160E3835,
-            true
-        ); //wl deployer
+        esradt.whitelistAddress(0x94b23c2233BC7c9Fe75B22950335d7F792b00E8e, true); //wl msig
+        esradt.whitelistAddress(0xa50FC8Fc0b7845b07DCD00ef6bdE46E5160E3835, true); //wl deployer
 
         chest.withdraw(RADT, 20000 * 1e18); //withdraw 20k RADT for liquidity mining
         RADT.transfer(0x94b23c2233BC7c9Fe75B22950335d7F792b00E8e, 20000 * 1e18); //send 20k RADT to msig

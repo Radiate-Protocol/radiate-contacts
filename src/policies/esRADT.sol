@@ -125,36 +125,32 @@ contract esRADT is ERC20("Escrowed RADT", "esRADT"), Ownable, ReentrancyGuard {
         RADT.transfer(msg.sender, claimable);
     }
 
-    function exitEarly() external nonReentrant returns (uint256) {
-        require(userInfo[msg.sender].totalVested > 0, "no mint");
-
+    function exitEarly(
+        uint256 _amount
+    ) external nonReentrant returns (uint256) {
         // 50% penalty for early exit – claim rewards first and then exit early
         uint256 claimable;
         if (whitelist[msg.sender] == true) {
             // Bypass penalty for whitelisted addresses
-            claimable = userInfo[msg.sender].totalVested;
-            userInfo[msg.sender].VestPeriod = 0;
-            userInfo[msg.sender].totalVested = 0;
             userInfo[msg.sender].lastInteractionTime = block.timestamp;
+            _burn(msg.sender, _amount);
+            RADT.transfer(msg.sender, _amount);
+            return _amount;
         }
-
-        uint256 timePass = block.timestamp.sub(
-            userInfo[msg.sender].lastInteractionTime
-        );
+        // Exit early
         if (userInfo[msg.sender].VestPeriod == 0) {
             return 0;
         } else {
-            claimable =
-                userInfo[msg.sender].totalVested.mul(timePass).div(
-                    userInfo[msg.sender].VestPeriod
-                ) /
-                2; // 50% early exit penalty
-            userInfo[msg.sender].VestPeriod = 0;
-            userInfo[msg.sender].totalVested = 0;
+            userInfo[msg.sender].totalVested = userInfo[msg.sender]
+                .totalVested
+                .add(_amount);
             userInfo[msg.sender].lastInteractionTime = block.timestamp;
+            userInfo[msg.sender].VestPeriod = vestingPeriod;
+            claimable = _amount.div(2);
+            _burn(msg.sender, _amount);
+            RADT.transfer(msg.sender, claimable);
+            return claimable;
         }
-        RADT.transfer(msg.sender, claimable);
-        return claimable;
     }
 
     function remainingVestedTime() external view returns (uint256) {

@@ -18,11 +18,7 @@ contract Treasury is Module {
     // and any policy can make approved transfers on the Treasury's behalf.
     // beware of approving malicious policies that can rug the user.
 
-    function depositFrom(
-        address depositor_,
-        ERC20 asset_,
-        uint256 amount_
-    ) external permissioned {
+    function depositFrom(address depositor_, ERC20 asset_, uint256 amount_) external permissioned {
         asset_.transferFrom(depositor_, address(this), amount_);
     }
 
@@ -31,5 +27,4 @@ contract Treasury is Module {
     function withdraw(ERC20 asset_, uint256 amount_) external permissioned {
         asset_.transfer(msg.sender, amount_);
     }
-    
 }

@@ -29,10 +29,7 @@ import "./IBasePool.sol";
  * indeed the Vault.
  */
 interface IGeneralPool is IBasePool {
-    function onSwap(
-        SwapRequest memory swapRequest,
-        uint256[] memory balances,
-        uint256 indexIn,
-        uint256 indexOut
-    ) external returns (uint256 amount);
+    function onSwap(SwapRequest memory swapRequest, uint256[] memory balances, uint256 indexIn, uint256 indexOut)
+        external
+        returns (uint256 amount);
 }

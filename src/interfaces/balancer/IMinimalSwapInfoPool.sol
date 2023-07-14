@@ -29,9 +29,7 @@ import "./IBasePool.sol";
  * indeed the Vault.
  */
 interface IMinimalSwapInfoPool is IBasePool {
-    function onSwap(
-        SwapRequest memory swapRequest,
-        uint256 currentBalanceTokenIn,
-        uint256 currentBalanceTokenOut
-    ) external returns (uint256 amount);
+    function onSwap(SwapRequest memory swapRequest, uint256 currentBalanceTokenIn, uint256 currentBalanceTokenOut)
+        external
+        returns (uint256 amount);
 }

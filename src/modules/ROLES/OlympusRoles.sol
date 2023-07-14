@@ -29,12 +29,7 @@ contract OlympusRoles is ROLESv1 {
     }
 
     /// @inheritdoc Module
-    function VERSION()
-        external
-        pure
-        override
-        returns (uint8 major, uint8 minor)
-    {
+    function VERSION() external pure override returns (uint8 major, uint8 minor) {
         major = 1;
         minor = 0;
     }
@@ -44,12 +39,10 @@ contract OlympusRoles is ROLESv1 {
     //============================================================================================//
 
     /// @inheritdoc ROLESv1
-    function saveRole(
-        bytes32 role_,
-        address addr_
-    ) external override permissioned {
-        if (hasRole[addr_][role_])
+    function saveRole(bytes32 role_, address addr_) external override permissioned {
+        if (hasRole[addr_][role_]) {
             revert ROLES_AddressAlreadyHasRole(addr_, role_);
+        }
 
         ensureValidRole(role_);
 
@@ -60,12 +53,10 @@ contract OlympusRoles is ROLESv1 {
     }
 
     /// @inheritdoc ROLESv1
-    function removeRole(
-        bytes32 role_,
-        address addr_
-    ) external override permissioned {
-        if (!hasRole[addr_][role_])
+    function removeRole(bytes32 role_, address addr_) external override permissioned {
+        if (!hasRole[addr_][role_]) {
             revert ROLES_AddressDoesNotHaveRole(addr_, role_);
+        }
 
         hasRole[addr_][role_] = false;
 
@@ -77,16 +68,13 @@ contract OlympusRoles is ROLESv1 {
     //============================================================================================//
 
     /// @inheritdoc ROLESv1
-    function requireRole(
-        bytes32 role_,
-        address caller_
-    ) external view override {
+    function requireRole(bytes32 role_, address caller_) external view override {
         if (!hasRole[caller_][role_]) revert ROLES_RequireRole(role_);
     }
 
     /// @inheritdoc ROLESv1
     function ensureValidRole(bytes32 role_) public pure override {
-        for (uint256 i = 0; i < 32; ) {
+        for (uint256 i = 0; i < 32;) {
             bytes1 char = role_[i];
             if ((char < 0x61 || char > 0x7A) && char != 0x5f && char != 0x00) {
                 revert ROLES_InvalidRole(role_); // a-z only

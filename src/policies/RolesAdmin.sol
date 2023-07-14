@@ -34,23 +34,14 @@ contract RolesAdmin is Policy {
         admin = msg.sender;
     }
 
-    function configureDependencies()
-        external
-        override
-        returns (Keycode[] memory dependencies)
-    {
+    function configureDependencies() external override returns (Keycode[] memory dependencies) {
         dependencies = new Keycode[](1);
         dependencies[0] = toKeycode("ROLES");
 
         ROLES = ROLESv1(getModuleAddress(dependencies[0]));
     }
 
-    function requestPermissions()
-        external
-        view
-        override
-        returns (Permissions[] memory requests)
-    {
+    function requestPermissions() external view override returns (Permissions[] memory requests) {
         Keycode ROLES_KEYCODE = toKeycode("ROLES");
 
         requests = new Permissions[](2);
