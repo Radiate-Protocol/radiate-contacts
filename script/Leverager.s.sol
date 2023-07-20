@@ -3,7 +3,6 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
 import "src/Kernel.sol";
-import {StakeChef} from "src/policies/StakeChef.sol";
 import {DLPVault} from "src/policies/DLPVault.sol";
 import {Leverager} from "src/policies/Leverager.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";

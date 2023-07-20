@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "src/Kernel.sol";
 import "src/modules/ROLES/OlympusRoles.sol";
 import "src/modules/TRSRY/TRSRY.sol";
+import "src/policies/RolesAdmin.sol";
 
 contract KernelScript is Script {
     function run() public {
@@ -14,12 +15,16 @@ contract KernelScript is Script {
 
         OlympusRoles roles = new OlympusRoles(kernel);
 
+        RolesAdmin admin = new RolesAdmin(kernel);
+
         Treasury treasury = new Treasury(kernel);
 
         kernel.executeAction(Actions.InstallModule, address(roles));
         kernel.executeAction(Actions.InstallModule, address(treasury));
+        kernel.executeAction(Actions.ActivatePolicy, address(admin));
 
         console2.log("Roles address: ", address(roles));
+        console2.log("Admin address: ", address(admin));
         console2.log("Treasury address: ", address(treasury));
         console2.log("Kernel address: ", address(kernel));
 
@@ -29,6 +34,7 @@ contract KernelScript is Script {
             string memory objName = "deploy";
             string memory json;
             json = vm.serializeAddress(objName, "roles", address(roles));
+            json = vm.serializeAddress(objName, "admin", address(admin));
             json = vm.serializeAddress(objName, "trsry", address(treasury));
             json = vm.serializeAddress(objName, "kernel", address(kernel));
 
