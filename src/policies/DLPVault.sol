@@ -3,13 +3,10 @@ pragma solidity 0.8.15;
 
 import "../Kernel.sol";
 import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
-import {ERC20} from "@solmate/tokens/ERC20.sol";
+import {ERC20Upgradeable} from "lib/openzeppelin-contracts-upgradeable/contracts/token/ERC20/ERC20Upgradeable.sol";
 import "lib/openzeppelin-contracts-upgradeable/contracts/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
-import "../interfaces/radiant-interfaces/IEligibilityDataProvider.sol";
 import "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
-import "../interfaces/radiant-interfaces/IChefIncentivesController.sol";
-import "../interfaces/aave/IFlashLoanSimpleReceiver.sol";
 import "../interfaces/radiant-interfaces/ILendingPool.sol";
 import "../interfaces/radiant-interfaces/ICreditDelegationToken.sol";
 
@@ -20,9 +17,13 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     event RewardAdded(uint256 reward);
     event RewardPaid(address indexed user, uint256 reward);
     event FeePercentUpdated(uint256 feePercent);
+    event DefaultLockIndexUpdated(uint256 defaultLockIndex);
     event RewardBaseTokensUpdated(address[] rewardBaseTokens);
     event WithdrawalQueued(
-        uint256 indexed withdrawalQueueIndex, address indexed owner, address indexed receiver, uint256 assets
+        uint256 indexed withdrawalQueueIndex,
+        address indexed owner,
+        address indexed receiver,
+        uint256 assets
     );
     // =========  ERRORS ========= //
 
@@ -32,23 +33,31 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     error DLPVault_MintDisabled();
     error DLPVault_FeePercentTooHigh(uint256 _feePercent);
     error DLPVault_VaultCapExceeded(uint256 _vaultCap);
+    error DLPVault_NotEnoughShares();
+    error DLPVault_AddressZero();
+    error DLPVault_ValueZero();
 
     // =========  STATE ========= //
     // Constants
-    ERC20 public constant DLPAddress = ERC20(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
-    ERC20 public constant rewardsToken = ERC20(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
-    IMultiFeeDistribution constant mfd = IMultiFeeDistribution(0x76ba3eC5f5adBf1C58c91e86502232317EeA72dE);
+    ERC20Upgradeable public constant DLPAddress =
+        ERC20Upgradeable(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
+    ERC20Upgradeable public constant rewardsToken =
+        ERC20Upgradeable(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
+    IMultiFeeDistribution constant mfd =
+        IMultiFeeDistribution(0x76ba3eC5f5adBf1C58c91e86502232317EeA72dE);
+    uint256 public constant MAX_QUEUE_PROCESS_LIMIT = 30;
 
     /// @notice Aave lending pool address (for flashloans)
-    IPool public constant aaveLendingPool = IPool(0x794a61358D6845594F94dc1DB02A252b5b4814aD);
+    IPool public constant aaveLendingPool =
+        IPool(0x794a61358D6845594F94dc1DB02A252b5b4814aD);
 
     /// @notice Lending Pool address
-    ILendingPool public constant lendingPool = ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
+    ILendingPool public constant lendingPool =
+        ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
 
-    uint256 public constant defaultLockIndex = 0; // 1 month lock
+    uint256 public defaultLockIndex; // 1 month lock
 
     // State
-    bytes32[50] private _gap;
     Kernel kernel;
     address[] public rewardBaseTokens;
     uint256 public amountStaked;
@@ -68,7 +77,9 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
 
     function initialize(Kernel _kernel) public initializer {
         kernel = _kernel;
+        defaultLockIndex = 0;
         __ERC4626_init(ERC20Upgradeable(address(DLPAddress)));
+        __ERC20_init("Radiate DLP Vault", "RADT-DLP");
     }
 
     //============================================================================================//
@@ -83,13 +94,20 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
         return kernel.isPolicyActive(Policy(address(this)));
     }
 
-    function configureDependencies() external returns (Keycode[] memory dependencies) {
+    function configureDependencies()
+        external
+        returns (Keycode[] memory dependencies)
+    {
         dependencies = new Keycode[](1);
         dependencies[0] = toKeycode("ROLES");
         ROLES = ROLESv1(address(kernel.getModuleForKeycode(dependencies[0])));
     }
 
-    function requestPermissions() external pure returns (Permissions[] memory requests) {
+    function requestPermissions()
+        external
+        pure
+        returns (Permissions[] memory requests)
+    {
         requests = new Permissions[](0);
     }
 
@@ -103,7 +121,14 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
         emit FeePercentUpdated(_feePercent);
     }
 
-    function addRewardBaseTokens(address[] memory _tokens) external onlyRole("admin") {
+    function setDefaultLockIndex(uint256 _defaultLockIndex) external onlyRole("admin") {
+        defaultLockIndex = _defaultLockIndex;
+        emit DefaultLockIndexUpdated(_defaultLockIndex);
+    }
+
+    function addRewardBaseTokens(
+        address[] memory _tokens
+    ) external onlyRole("admin") {
         rewardBaseTokens = _tokens;
         emit RewardBaseTokensUpdated(_tokens);
     }
@@ -117,17 +142,23 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     }
 
     // Enable credit delegation for the leverager contracts
-    function enableCreditDelegation(ICreditDelegationToken _token, address _leverager) external onlyRole("admin") {
+    function enableCreditDelegation(
+        ICreditDelegationToken _token,
+        address _leverager
+    ) external onlyRole("admin") {
         _token.approveDelegation(_leverager, type(uint256).max);
     }
 
-    function disableCreditDelegation(ICreditDelegationToken _token, address _leverager) external onlyRole("admin") {
+    function disableCreditDelegation(
+        ICreditDelegationToken _token,
+        address _leverager
+    ) external onlyRole("admin") {
         _token.approveDelegation(_leverager, 0);
     }
 
-    function withdrawTokens(ERC20 _token) external onlyRole("admin") {
+    function withdrawTokens(ERC20Upgradeable _token) external onlyRole("admin") {
         if (_token == DLPAddress) {
-            processWithdrawalQueue();
+            processWithdrawalQueue(MAX_QUEUE_PROCESS_LIMIT);
             // Possible to withdraw user DLP tokens if they are unlocked – should transfer in DLP.
         }
         _token.transfer(msg.sender, _token.balanceOf(address(this)));
@@ -155,7 +186,9 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
         mfd.exit(true);
         // transfer all rewards to keeper to convert
         for (uint256 i = 0; i < rewardBaseTokens.length; i++) {
-            uint256 rewardBalance = IERC20(rewardBaseTokens[i]).balanceOf(address(this));
+            uint256 rewardBalance = IERC20(rewardBaseTokens[i]).balanceOf(
+                address(this)
+            );
             IERC20(rewardBaseTokens[i]).transfer(msg.sender, rewardBalance);
         }
     }
@@ -163,16 +196,22 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     /**
      * @notice Flashloan callback for Aave
      */
-    function executeOperation(address _asset, uint256 amount, uint256, address initiator, bytes calldata)
-        external
-        returns (bool success)
-    {
+    function executeOperation(
+        address _asset,
+        uint256 amount,
+        uint256,
+        address initiator,
+        bytes calldata
+    ) external returns (bool success) {
         if (msg.sender != address(aaveLendingPool)) {
             revert DLPVault_ONLY_AAVE_LENDING_POOL();
         }
         ROLES.requireRole("leverager", initiator);
         // Repay approval
-        if (IERC20(_asset).allowance(address(this), address(aaveLendingPool)) == 0) {
+        if (
+            IERC20(_asset).allowance(address(this), address(aaveLendingPool)) ==
+            0
+        ) {
             IERC20(_asset).approve(address(aaveLendingPool), type(uint256).max);
         }
 
@@ -184,22 +223,26 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     function relock() external onlyRole("keeper") {
         uint256 withdrawnAmt = mfd.withdrawExpiredLocksFor(address(this));
         if (withdrawnAmt > 0) {
-            processWithdrawalQueue();
+            processWithdrawalQueue(MAX_QUEUE_PROCESS_LIMIT);
         }
-        mfd.stake(withdrawnAmt, address(this), defaultLockIndex);
+
+        uint256 leftOver = DLPAddress.balanceOf(address(this));
+        mfd.stake(leftOver, address(this), defaultLockIndex);
     }
 
     function lock() external onlyRole("keeper") {
         uint256 amount = DLPAddress.balanceOf(address(this));
-        mfd.stake(amount, address(this), defaultLockIndex); // @wooark - defaultLockIndex of 1 for 1 month lock?
-        amountStaked += amount;
+        mfd.stake(amount, address(this), defaultLockIndex);
     }
 
     //============================================================================================//
     //                               VAULT LOGIC                                                  //
     //============================================================================================//
 
-    function deposit(uint256 amount, address receiver) public override updateReward(msg.sender) returns (uint256) {
+    function deposit(
+        uint256 amount,
+        address receiver
+    ) public override updateReward(receiver) returns (uint256) {
         if (amount + amountStaked > vaultCap) {
             revert DLPVault_VaultCapExceeded(amount + amountStaked);
         }
@@ -207,35 +250,41 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
         DLPAddress.transferFrom(msg.sender, address(this), amount);
 
         if (DLPAddress.allowance(address(this), address(mfd)) == 0) {
-            DLPAddress.approve(address(this), type(uint256).max);
+            DLPAddress.approve(address(mfd), type(uint256).max);
         }
 
         if (withdrawalQueueIndex != withdrawalQueue.length) {
-            processWithdrawalQueue();
+            processWithdrawalQueue(MAX_QUEUE_PROCESS_LIMIT);
         }
 
+        amountStaked += amount;
         _mint(receiver, amount);
         return amount;
     }
 
     // Withdraw DLP tokens from the vault
-    function withdraw(uint256 assets, address receiver, address owner)
-        public
-        override
-        updateReward(owner)
-        returns (uint256)
-    {
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address owner
+    ) public override updateReward(owner) returns (uint256) {
+        if (receiver == address(0)) revert DLPVault_AddressZero();
+        if (assets == 0) revert DLPVault_WithdrawZero(msg.sender);
+        if (balanceOf(owner) < assets) revert DLPVault_NotEnoughShares();
+
         getReward(owner);
         if (msg.sender != owner) {
             uint256 allowed = allowance(owner, msg.sender); // Saves gas for limited approvals.
             if (allowed != type(uint256).max) {
-                _spendAllowance(owner, msg.sender, allowed - assets);
+                _spendAllowance(owner, msg.sender, assets);
             }
         }
 
-        if (assets == 0) revert DLPVault_WithdrawZero(msg.sender);
         // If there's enough cash and the queue is empty, process withdrawal
-        if (assets <= DLPAddress.balanceOf(address(this)) && withdrawalQueue.length == withdrawalQueueIndex) {
+        if (
+            assets <= DLPAddress.balanceOf(address(this)) &&
+            withdrawalQueue.length == withdrawalQueueIndex
+        ) {
             amountStaked -= assets;
             // Process withdrawal since there's enough cash
             _burn(owner, assets);
@@ -249,17 +298,26 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
             // Doesn't autoclaim rewards while you're in the withdrawal queue.
             uint256 queueIndex = withdrawalQueue.length - withdrawalQueueIndex;
             withdrawalQueue.push(
-                WithdrawalQueue({caller: msg.sender, owner: owner, receiver: receiver, assets: assets})
+                WithdrawalQueue({
+                    caller: msg.sender,
+                    owner: owner,
+                    receiver: receiver,
+                    assets: assets
+                })
             );
             emit WithdrawalQueued(queueIndex, owner, receiver, assets);
-            processWithdrawalQueue();
+            processWithdrawalQueue(0);
             return 0;
         }
     }
 
     // Process open withdrawal requests.
-    function processWithdrawalQueue() public {
-        for (uint256 i = withdrawalQueueIndex; i < withdrawalQueue.length; i++) {
+    function processWithdrawalQueue(uint256 limit) public updateReward(address(0)) {
+        uint256 lastIndex = withdrawalQueueIndex + limit;
+        if (limit == 0 || lastIndex > withdrawalQueue.length) {
+            lastIndex = withdrawalQueue.length;
+        }
+        for (uint256 i = withdrawalQueueIndex; i < lastIndex; i++) {
             WithdrawalQueue memory queueItem = withdrawalQueue[i];
 
             if (queueItem.assets <= DLPAddress.balanceOf(address(this))) {
@@ -269,11 +327,15 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
                 // If user balance dips below withdrawal amount, their withdraw request gets cancelled
                 if (balanceOf(queueItem.owner) >= queueItem.assets) {
                     _burn(queueItem.owner, queueItem.assets);
-                    DLPAddress.transfer(queueItem.receiver, queueItem.assets);
                     amountStaked -= queueItem.assets;
+                    DLPAddress.transfer(queueItem.receiver, queueItem.assets);
 
                     emit Withdraw(
-                        queueItem.caller, queueItem.receiver, queueItem.owner, queueItem.assets, queueItem.assets
+                        queueItem.caller,
+                        queueItem.receiver,
+                        queueItem.owner,
+                        queueItem.assets,
+                        queueItem.assets
                     );
                 }
 
@@ -295,6 +357,15 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     }
 
     // Brick redeem() to prevent users from redeeming – withdraws only
+    function redeem(
+        uint256,
+        address,
+        address
+    ) public pure override returns (uint256) {
+        return 0;
+    }
+
+    // Brick previewRedeem() to prevent users from redeeming – withdraws only
     function previewRedeem(uint256) public pure override returns (uint256) {
         return 0;
     }
@@ -313,7 +384,10 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
     //                             ERC20 OVERRIDES                                                //
     //============================================================================================//
     // Overriding ERC20 transfer and transferFrom to update rewards
-    function transfer(address to, uint256 amount)
+    function transfer(
+        address to,
+        uint256 amount
+    )
         public
         override(IERC20Upgradeable, ERC20Upgradeable)
         updateReward(to)
@@ -326,15 +400,18 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount)
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    )
         public
         override(IERC20Upgradeable, ERC20Upgradeable)
         updateReward(to)
         returns (bool)
     {
         getReward(from);
-        _transfer(from, to, amount);
-        return true;
+        return super.transferFrom(from, to, amount);
     }
 
     //============================================================================================//
@@ -377,12 +454,17 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
             return rewardPerTokenStored;
         }
 
-        return rewardPerTokenStored + (rewardRate * (lastTimeRewardApplicable() - updatedAt) * 1e18) / totalSupply();
+        return
+            rewardPerTokenStored +
+            (rewardRate * (lastTimeRewardApplicable() - updatedAt) * 1e18) /
+            totalSupply();
     }
 
     function earned(address _account) public view returns (uint256) {
         return
-            ((balanceOf(_account) * (rewardPerToken() - userRewardPerTokenPaid[_account])) / 1e18) + rewards[_account];
+            ((balanceOf(_account) *
+                (rewardPerToken() - userRewardPerTokenPaid[_account])) / 1e18) +
+            rewards[_account];
     }
 
     function getReward(address receiver) public updateReward(receiver) {
@@ -402,19 +484,26 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
         if (finishAt >= block.timestamp) {
             revert DLPVault_previous_reward_period_not_finished(finishAt);
         }
+        if (_duration == 0) revert DLPVault_ValueZero();
         duration = _duration;
     }
 
-    function notifyRewardAmount(uint256 _amount) external onlyRole("keeper") updateReward(address(0)) {
+    function notifyRewardAmount(
+        uint256 _amount
+    ) external onlyRole("keeper") updateReward(address(0)) {
         if (block.timestamp >= finishAt) {
             rewardRate = _amount / duration;
         } else {
-            uint256 remainingRewards = (finishAt - block.timestamp) * rewardRate;
+            uint256 remainingRewards = (finishAt - block.timestamp) *
+                rewardRate;
             rewardRate = (_amount + remainingRewards) / duration;
         }
 
         require(rewardRate > 0, "reward rate = 0");
-        require(rewardRate * duration <= rewardsToken.balanceOf(address(this)), "reward amount > balance");
+        require(
+            rewardRate * duration <= rewardsToken.balanceOf(address(this)),
+            "reward amount > balance"
+        );
 
         finishAt = block.timestamp + duration;
         updatedAt = block.timestamp;
