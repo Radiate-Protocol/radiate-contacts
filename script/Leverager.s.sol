@@ -5,7 +5,7 @@ import "forge-std/Script.sol";
 import "src/Kernel.sol";
 import {DLPVault} from "src/policies/DLPVault.sol";
 import {Leverager} from "src/policies/Leverager.sol";
-import {ERC20} from "@solmate/tokens/ERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 contract LeveragerScript is Script {

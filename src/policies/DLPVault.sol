@@ -11,8 +11,9 @@ import "../interfaces/radiant-interfaces/ILendingPool.sol";
 import "../interfaces/radiant-interfaces/ICreditDelegationToken.sol";
 
 import "../interfaces/aave/IPool.sol";
+import "../interfaces/aave/IFlashLoanSimpleReceiver.sol";
 
-contract DLPVault is ERC4626Upgradeable, RolesConsumer {
+contract DLPVault is IFlashLoanSimpleReceiver, ERC4626Upgradeable, RolesConsumer {
     // =========  EVENTS ========= //
     event RewardAdded(uint256 reward);
     event RewardPaid(address indexed user, uint256 reward);
@@ -215,8 +216,12 @@ contract DLPVault is ERC4626Upgradeable, RolesConsumer {
             IERC20(_asset).approve(address(aaveLendingPool), type(uint256).max);
         }
 
+        uint256 withdrawAmount = amount / 2;
+        uint256 amountPlusPremium = withdrawAmount + withdrawAmount * aaveLendingPool.FLASHLOAN_PREMIUM_TOTAL() / 1e4;
+
         lendingPool.repay(_asset, amount, 2, address(this));
-        lendingPool.withdraw(_asset, amount, initiator);
+        lendingPool.withdraw(_asset, amount / 2, initiator);
+        lendingPool.withdraw(_asset, amountPlusPremium, address(this));
         return true;
     }
 

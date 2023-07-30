@@ -5,18 +5,19 @@ pragma abicoder v2;
 import "../Kernel.sol";
 import {DLPVault} from "./DLPVault.sol";
 import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
-import {Treasury} from "../modules/TRSRY/TRSRY.sol";
-import {ERC20} from "@solmate/tokens/ERC20.sol";
-import {ERC4626} from "@solmate/mixins/ERC4626.sol";
-import {SafeTransferLib} from "@solmate/utils/SafeTransferLib.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "../interfaces/radiant-interfaces/ILendingPool.sol";
+import "../interfaces/radiant-interfaces/IVariableDebtToken.sol";
+import "../interfaces/radiant-interfaces/IAToken.sol";
 import "../interfaces/aave/IPool.sol";
 
 /// @title Leverager Contract
 /// @author w
 /// @dev All function calls are currently implemented without side effects
 contract Leverager is RolesConsumer, Policy, ERC4626 {
-    using SafeTransferLib for ERC20;
+    using SafeERC20 for ERC20;
 
     // =========  EVENTS ========= //
 
@@ -29,24 +30,31 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     error Leverager_VAULT_CAP_REACHED();
     error Leverager_ERROR_BORROW_RATIO(uint256 borrowRatio);
     error Leverager_CANNOT_WITHDRAW_AFTER_EMERGENCY_UNLOOP();
-    error Leverager_NO_ETHER();
+    error Leverager_FeePercentTooHigh(uint256 depositFee);
+    error Leverager_LoopCountTooBig();
 
-    // =========  STATE ========= //
-    address internal TRSRY;
-    bool public emergencyUnlooping;
-    ERC20 public constant DLP = ERC20(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
-
+    // =========  Constants ========= //
     /// @notice Lending Pool address
     ILendingPool public constant lendingPool = ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
 
     /// @notice Aave lending pool address (for flashloans)
     IPool public constant aaveLendingPool = IPool(0x794a61358D6845594F94dc1DB02A252b5b4814aD);
+
+    /// @notice Ratio Divisor = 100%
     uint256 public constant RATIO_DIVISOR = 1e6;
 
-    uint256 public immutable minAmountToInvest;
-    uint256 public amountInvested;
+    // =========  STATE ========= //
+    /// @notice Treasury address
+    address internal _TRSRY;
 
-    DLPVault public dlpVault;
+    /// @notice `True` when emergency unlooping
+    bool public emergencyUnlooping;
+
+    /// @notice Minimum invest amount
+    uint256 public immutable minAmountToInvest;
+
+    /// @notice Dlp vault contract address
+    DLPVault public immutable dlpVault;
 
     constructor(
         uint256 _minAmountToInvest,
@@ -58,7 +66,8 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
         Kernel _kernel
     )
         Policy(_kernel)
-        ERC4626(_asset, string(abi.encodePacked("Radiate ", _asset.name)), string(abi.encodePacked("rd-", _asset.symbol)))
+        ERC4626(_asset)
+        ERC20(string(abi.encodePacked("Radiate ", _asset.name())), string(abi.encodePacked("rd-", _asset.symbol())))
     {
         require(_minAmountToInvest > 0, "Leverager: minAmountToInvest must be greater than 0");
         minAmountToInvest = _minAmountToInvest;
@@ -77,7 +86,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
         dependencies[0] = toKeycode("ROLES");
         dependencies[1] = toKeycode("TRSRY");
         ROLES = ROLESv1(getModuleAddress(dependencies[0]));
-        TRSRY = getModuleAddress(dependencies[1]);
+        _TRSRY = getModuleAddress(dependencies[1]);
     }
 
     function requestPermissions() external pure override returns (Permissions[] memory requests) {
@@ -104,6 +113,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
 
     /// @dev Change loop count for any new deposits
     function changeLoopCount(uint256 _loopCount) external onlyRole("admin") {
+        if (loopCount > 20) revert Leverager_LoopCountTooBig();
         loopCount = _loopCount;
     }
 
@@ -122,7 +132,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     }
 
     function recoverERC20(ERC20 token, uint256 tokenAmount) external onlyRole("admin") {
-        if (token == asset && emergencyUnlooping) {
+        if (address(token) == asset() && emergencyUnlooping) {
             revert Leverager_CANNOT_WITHDRAW_AFTER_EMERGENCY_UNLOOP();
         }
         token.safeTransfer(msg.sender, tokenAmount);
@@ -154,6 +164,17 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     }
 
     /**
+     * @dev Returns atoken address of asset
+     * @param asset_ The address of the underlying asset of the reserve
+     * @return varaiableDebtToken address of the asset
+     *
+     */
+    function getAToken(address asset_) public view returns (address) {
+        DataTypes.ReserveData memory reserveData = lendingPool.getReserveData(asset_);
+        return reserveData.aTokenAddress;
+    }
+
+    /**
      * @dev Returns loan to value
      * @param asset_ The address of the underlying asset of the reserve
      * @return ltv of the asset
@@ -169,24 +190,26 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      *
      */
     function _loop() internal {
-        if (borrowRatio <= RATIO_DIVISOR) {
+        if (borrowRatio > RATIO_DIVISOR) {
             revert Leverager_ERROR_BORROW_RATIO(borrowRatio);
         }
 
         uint16 referralCode = 0;
-        uint256 amount = asset.balanceOf(address(this));
+        ERC20 baseAsset = ERC20(asset());
+        uint256 amount = baseAsset.balanceOf(address(this));
         uint256 interestRateMode = 2; // variable
-        if (asset.allowance(address(this), address(lendingPool)) == 0) {
-            asset.safeApprove(address(lendingPool), type(uint256).max);
+        if (baseAsset.allowance(address(this), address(lendingPool)) == 0) {
+            baseAsset.safeApprove(address(lendingPool), type(uint256).max);
         }
-        if (asset.allowance(address(this), TRSRY) == 0) {
-            asset.safeApprove(TRSRY, type(uint256).max);
-        }
+
+        lendingPool.deposit(address(baseAsset), amount, address(dlpVault), referralCode);
+
         for (uint256 i = 0; i < loopCount; i += 1) {
             amount = (amount * borrowRatio) / RATIO_DIVISOR;
-            lendingPool.borrow(address(asset), amount, interestRateMode, referralCode, address(dlpVault));
 
-            lendingPool.deposit(address(asset), amount, address(dlpVault), referralCode);
+            lendingPool.borrow(address(baseAsset), amount, interestRateMode, referralCode, address(dlpVault));
+
+            lendingPool.deposit(address(baseAsset), amount, address(dlpVault), referralCode);
         }
     }
 
@@ -196,7 +219,7 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
      */
     function _unloop(uint256 _amount) internal {
         bytes memory params = "";
-        aaveLendingPool.flashLoanSimple(address(dlpVault), address(asset), _amount, params, 0);
+        aaveLendingPool.flashLoanSimple(address(dlpVault), asset(), _amount * 2, params, 0);
         emit Unloop(_amount);
     }
 
@@ -207,35 +230,53 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     //============================================================================================//
 
     function totalAssets() public view override returns (uint256) {
-        return asset.balanceOf(address(this)) + amountInvested;
+		DataTypes.ReserveData memory reserveData = lendingPool.getReserveData(asset());
+        IAToken aToken = IAToken(reserveData.aTokenAddress);
+        IVariableDebtToken vdToken = IVariableDebtToken(reserveData.variableDebtTokenAddress);
+        uint256 amount = aToken.scaledBalanceOf(address(dlpVault));
+        uint256 debt = vdToken.scaledBalanceOf(address(dlpVault));
+
+        return ERC20(asset()).balanceOf(address(this)) + amount - debt;
     }
 
-    function afterDeposit(uint256 assets, uint256) internal override {
-        if (assets + totalAssets() >= vaultCap) {
+    function deposit(uint256 assets, address receiver) public override returns (uint256) {
+        if (totalAssets() >= vaultCap) {
             revert Leverager_VAULT_CAP_REACHED();
         }
-        uint256 cash_ = asset.balanceOf(address(this));
+
+        uint256 shares = previewDeposit(assets);
+        _deposit(_msgSender(), receiver, assets, shares);
+
+        uint256 cash_ = ERC20(asset()).balanceOf(address(this));
         if (cash_ >= minAmountToInvest) {
             uint256 depositFee = dlpVault.feePercent();
+            if (depositFee >= RATIO_DIVISOR / 2) revert Leverager_FeePercentTooHigh(depositFee);
             if (depositFee > 0) {
                 // Fee is necessary to prevent deposit and withdraw trolling
                 uint256 fee = (cash_ * depositFee) / RATIO_DIVISOR;
-                asset.transfer(TRSRY, fee);
+                ERC20(asset()).transfer(_TRSRY, fee);
             }
             _loop();
         }
-        amountInvested += assets;
+        return shares;
     }
 
-    function beforeWithdraw(uint256 assets, uint256) internal override {
-        if (assets > asset.balanceOf(address(this))) {
-            uint256 amountToWithdraw = assets - asset.balanceOf(address(this));
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address owner
+    ) public virtual override returns (uint256) {
+        uint256 available = ERC20(asset()).balanceOf(address(this));
+        uint256 flashLoanFee = 0;
+        if (assets > available) {
+            uint256 amountToWithdraw = assets - available;
+            flashLoanFee = amountToWithdraw * 2 * aaveLendingPool.FLASHLOAN_PREMIUM_TOTAL() / 1e4;
             _unloop(amountToWithdraw);
-            amountInvested -= amountToWithdraw;
         }
-    }
 
-    receive() external payable {
-        revert Leverager_NO_ETHER();
+        uint256 shares = previewWithdraw(assets + flashLoanFee);
+        _withdraw(_msgSender(), receiver, owner, assets, shares);
+
+        return shares;
     }
 }

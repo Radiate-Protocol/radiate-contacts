@@ -26,4 +26,10 @@ interface IPool {
         bytes calldata params,
         uint16 referralCode
     ) external;
+
+    /**
+     * @notice Returns the total fee on flash loans
+     * @return The total fee on flashloans
+     */
+    function FLASHLOAN_PREMIUM_TOTAL() external view returns (uint128);
 }

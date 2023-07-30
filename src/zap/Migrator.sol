@@ -6,7 +6,6 @@ import "../interfaces/aave/IFlashLoanSimpleReceiver.sol";
 import "../interfaces/aave/IPool.sol";
 import "../interfaces/radiant-interfaces/ILendingPool.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {IWETH} from "../interfaces/balancer/IVault.sol";
 
 contract MigratorZap is IFlashLoanSimpleReceiver, Ownable {
