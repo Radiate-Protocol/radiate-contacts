@@ -30,6 +30,12 @@ interface IMultiFeeDistribution is IFeeDistribution {
 
     function withdrawExpiredLocksFor(address _address) external returns (uint256);
 
+	function withdrawExpiredLocksForWithOptions(
+		address _address,
+		uint256 _limit,
+		bool _ignoreRelock
+	) external returns (uint256);
+
     function claimableRewards(address account) external view returns (IFeeDistribution.RewardData[] memory rewards);
 
     function setDefaultRelockTypeIndex(uint256 _index) external;

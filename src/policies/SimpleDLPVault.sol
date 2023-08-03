@@ -47,7 +47,7 @@ contract rDLP is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 
     function exit() external onlyOwner {
         mfd.exit(true);
-        mfd.withdrawExpiredLocksFor(address(this));
+        mfd.withdrawExpiredLocksForWithOptions(address(this), 0, true);
         mfd.getAllRewards();
     }
 }
