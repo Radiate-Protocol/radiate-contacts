@@ -226,7 +226,7 @@ contract DLPVault is IFlashLoanSimpleReceiver, ERC4626Upgradeable, RolesConsumer
     }
 
     function relock() external onlyRole("keeper") {
-        uint256 withdrawnAmt = mfd.withdrawExpiredLocksForWithOptions(address(this));
+        uint256 withdrawnAmt = mfd.withdrawExpiredLocksForWithOptions(address(this), 0, true);
         if (withdrawnAmt > 0) {
             processWithdrawalQueue(MAX_QUEUE_PROCESS_LIMIT);
         }
