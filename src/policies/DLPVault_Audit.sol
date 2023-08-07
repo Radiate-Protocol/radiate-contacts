@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "lib/openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import "lib/openzeppelin-contracts-upgradeable/contracts/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ERC4626Upgradeable, IERC20Upgradeable} from "@openzeppelin-upgradeable/contracts/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
-import "../Kernel.sol";
-import "../modules/ROLES/OlympusRoles.sol";
+import {Kernel, Keycode, Permissions, toKeycode, Policy} from "../Kernel.sol";
+import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
 
+import {IDLPVault} from "../interfaces/radiate/IDLPVault.sol";
 import {IAToken} from "../interfaces/radiant-interfaces/IAToken.sol";
 import {IMultiFeeDistribution, LockedBalance} from "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
 import {ILendingPool} from "../interfaces/radiant-interfaces/ILendingPool.sol";
@@ -20,7 +20,8 @@ import {IVault, IAsset, IWETH} from "../interfaces/balancer/IVault.sol";
 contract DLPVault is
     ERC4626Upgradeable,
     RolesConsumer,
-    IFlashLoanSimpleReceiver
+    IFlashLoanSimpleReceiver,
+    IDLPVault
 {
     using SafeERC20 for IERC20;
 
@@ -30,7 +31,6 @@ contract DLPVault is
 
     string private constant _NAME = "Radiate DLP Vault";
     string private constant _SYMBOL = "RADT-DLP";
-    uint256 private constant _MULTIPLIER = 1e6; // 100%
 
     IERC20 public constant DLP =
         IERC20(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
@@ -48,6 +48,7 @@ contract DLPVault is
         0x32df62dc3aed2cd6224193052ce665dc181658410002000000000000000003bd;
 
     uint256 public constant MAX_QUEUE_PROCESS_LIMIT = 30;
+    uint256 public constant MULTIPLIER = 1e6; // 100%
 
     //============================================================================================//
     //                                          STORAGE                                           //
@@ -72,7 +73,7 @@ contract DLPVault is
     struct RewardInfo {
         address token;
         bool isAToken;
-        bytes32 poolId;
+        bytes32 poolId; // Balancer pool id
         uint256 pending;
     }
     RewardInfo[] public rewards;
@@ -134,7 +135,7 @@ contract DLPVault is
 
     error CALLER_NOT_KERNEL();
     error CALLER_NOT_AAVE();
-    error INVALID_FEE(uint256 fee);
+    error FEE_PERCENT_TOO_HIGH(uint256 fee);
     error INVALID_PARAM();
     error EXCEED_BOOSTED_AMOUNT();
     error EXCEED_VAULT_CAP(uint256 vaultCap);
@@ -211,9 +212,11 @@ contract DLPVault is
         external
         returns (Keycode[] memory dependencies)
     {
-        dependencies = new Keycode[](1);
+        dependencies = new Keycode[](2);
         dependencies[0] = toKeycode("ROLES");
+        dependencies[1] = toKeycode("TRSRY");
         ROLES = ROLESv1(address(kernel.getModuleForKeycode(dependencies[0])));
+        treasury = address(kernel.getModuleForKeycode(dependencies[1]));
     }
 
     function requestPermissions()
@@ -233,9 +236,12 @@ contract DLPVault is
         uint256 _withdrawFee,
         uint256 _compoundFee
     ) external onlyAdmin {
-        if (_depositFee >= _MULTIPLIER) revert INVALID_FEE(_depositFee);
-        if (_withdrawFee >= _MULTIPLIER) revert INVALID_FEE(_withdrawFee);
-        if (_compoundFee >= _MULTIPLIER) revert INVALID_FEE(_compoundFee);
+        if (_depositFee >= MULTIPLIER / 2)
+            revert FEE_PERCENT_TOO_HIGH(_depositFee);
+        if (_withdrawFee >= MULTIPLIER / 2)
+            revert FEE_PERCENT_TOO_HIGH(_withdrawFee);
+        if (_compoundFee >= MULTIPLIER / 2)
+            revert FEE_PERCENT_TOO_HIGH(_compoundFee);
 
         fee.depositFee = _depositFee;
         fee.withdrawFee = _withdrawFee;
@@ -388,7 +394,7 @@ contract DLPVault is
         if (fee.compoundFee == 0) return;
 
         RewardInfo storage reward = rewards[_index];
-        uint256 feeAmount = (_harvested * fee.compoundFee) / _MULTIPLIER;
+        uint256 feeAmount = (_harvested * fee.compoundFee) / MULTIPLIER;
 
         IERC20(reward.token).safeTransfer(treasury, feeAmount);
 
@@ -398,7 +404,7 @@ contract DLPVault is
     function _sendDepositFee(uint256 _assets) internal returns (uint256) {
         if (fee.depositFee == 0) return _assets;
 
-        uint256 feeAmount = (_assets * fee.depositFee) / _MULTIPLIER;
+        uint256 feeAmount = (_assets * fee.depositFee) / MULTIPLIER;
 
         DLP.safeTransferFrom(msg.sender, treasury, feeAmount);
 
@@ -408,7 +414,7 @@ contract DLPVault is
     function _sendMintFee(uint256 _shares) internal returns (uint256) {
         if (fee.depositFee == 0) return _shares;
 
-        uint256 feeShares = (_shares * fee.depositFee) / _MULTIPLIER;
+        uint256 feeShares = (_shares * fee.depositFee) / MULTIPLIER;
         uint256 feeAmount = super.previewMint(feeShares);
 
         DLP.safeTransferFrom(msg.sender, treasury, feeAmount);
@@ -422,7 +428,7 @@ contract DLPVault is
     ) internal returns (uint256) {
         if (fee.withdrawFee == 0) return _assets;
 
-        uint256 feeAssets = (_assets * fee.withdrawFee) / _MULTIPLIER;
+        uint256 feeAssets = (_assets * fee.withdrawFee) / MULTIPLIER;
         uint256 feeAmount = super.previewWithdraw(feeAssets);
 
         super._transfer(_owner, treasury, feeAmount);
@@ -436,11 +442,22 @@ contract DLPVault is
     ) internal returns (uint256) {
         if (fee.withdrawFee == 0) return _shares;
 
-        uint256 feeAmount = (_shares * fee.withdrawFee) / _MULTIPLIER;
+        uint256 feeAmount = (_shares * fee.withdrawFee) / MULTIPLIER;
 
         super._transfer(_owner, treasury, feeAmount);
 
         return _shares - feeAmount;
+    }
+
+    function getFee()
+        external
+        view
+        override
+        returns (uint256 depositFee, uint256 withdrawFee, uint256 compoundFee)
+    {
+        depositFee = fee.depositFee;
+        withdrawFee = fee.withdrawFee;
+        compoundFee = fee.compoundFee;
     }
 
     //============================================================================================//
@@ -455,6 +472,7 @@ contract DLPVault is
         bytes calldata
     )
         external
+        override
         onlyAaveLendingPool
         onlyLeverager(initiator)
         returns (bool success)
