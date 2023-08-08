@@ -13,9 +13,11 @@ import {IAToken} from "../interfaces/radiant-interfaces/IAToken.sol";
 import {IMultiFeeDistribution, LockedBalance} from "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
 import {ILendingPool} from "../interfaces/radiant-interfaces/ILendingPool.sol";
 import {ICreditDelegationToken} from "../interfaces/radiant-interfaces/ICreditDelegationToken.sol";
+import {IBountyManager} from "../interfaces/radiant-interfaces/IBountyManager.sol";
 import {IPool} from "../interfaces/aave/IPool.sol";
 import {IFlashLoanSimpleReceiver} from "../interfaces/aave/IFlashLoanSimpleReceiver.sol";
 import {IVault, IAsset, IWETH} from "../interfaces/balancer/IVault.sol";
+import {ISwapRouter} from "../interfaces/uniswap/ISwapRouter.sol";
 
 contract DLPVault is
     ERC4626Upgradeable,
@@ -34,6 +36,8 @@ contract DLPVault is
 
     IERC20 public constant DLP =
         IERC20(0x32dF62dc3aEd2cD6224193052Ce665DC18165841);
+    IERC20 public constant RDNT =
+        IERC20(0x3082CC23568eA640225c2467653dB90e9250AaA0);
     IWETH public constant WETH =
         IWETH(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
     IPool public constant AAVE_LENDING_POOL =
@@ -42,6 +46,8 @@ contract DLPVault is
         ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
     IMultiFeeDistribution public constant MFD =
         IMultiFeeDistribution(0x76ba3eC5f5adBf1C58c91e86502232317EeA72dE);
+    ISwapRouter public constant SWAP_ROUTER =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
     IVault public constant VAULT =
         IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
     bytes32 public constant RDNT_WETH_POOL_ID =
@@ -73,7 +79,7 @@ contract DLPVault is
     struct RewardInfo {
         address token;
         bool isAToken;
-        bytes32 poolId; // Balancer pool id
+        uint24 poolFee; // UniswapV3 pool fee
         uint256 pending;
     }
     RewardInfo[] public rewards;
@@ -88,9 +94,10 @@ contract DLPVault is
 
     /// @notice withdrawal queue
     struct WithdrawalQueue {
-        address receiver;
         uint256 assets;
+        address receiver;
         bool isClaimed;
+        uint32 createdAt;
     }
     WithdrawalQueue[] public withdrawalQueues;
     uint256 public withdrawalQueueIndex;
@@ -260,18 +267,18 @@ contract DLPVault is
     function addRewardBaseTokens(
         address[] calldata _rewardBaseTokens,
         bool[] calldata _isATokens,
-        bytes32[] calldata _poolIds
+        uint24[] calldata _poolFees
     ) external onlyAdmin {
         uint256 length = _rewardBaseTokens.length;
         if (length != _isATokens.length) revert INVALID_PARAM();
-        if (length != _poolIds.length) revert INVALID_PARAM();
+        if (length != _poolFees.length) revert INVALID_PARAM();
 
         for (uint256 i = 0; i < length; ) {
             rewards.push(
                 RewardInfo({
                     token: _rewardBaseTokens[i],
                     isAToken: _isATokens[i],
-                    poolId: _poolIds[i],
+                    poolFee: _poolFees[i],
                     pending: 0
                 })
             );
@@ -365,9 +372,10 @@ contract DLPVault is
 
         withdrawalQueues.push(
             WithdrawalQueue({
-                receiver: msg.sender,
                 assets: _amount,
-                isClaimed: false
+                receiver: msg.sender,
+                isClaimed: false,
+                createdAt: uint32(block.timestamp)
             })
         );
     }
@@ -404,20 +412,21 @@ contract DLPVault is
     function _sendDepositFee(uint256 _assets) internal returns (uint256) {
         if (fee.depositFee == 0) return _assets;
 
-        uint256 feeAmount = (_assets * fee.depositFee) / MULTIPLIER;
+        uint256 feeAssets = (_assets * fee.depositFee) / MULTIPLIER;
 
-        DLP.safeTransferFrom(msg.sender, treasury, feeAmount);
+        DLP.safeTransferFrom(msg.sender, treasury, feeAssets);
 
-        return _assets - feeAmount;
+        return _assets - feeAssets;
     }
 
     function _sendMintFee(uint256 _shares) internal returns (uint256) {
         if (fee.depositFee == 0) return _shares;
 
-        uint256 feeShares = (_shares * fee.depositFee) / MULTIPLIER;
-        uint256 feeAmount = super.previewMint(feeShares);
+        uint256 feeAssets = (super.previewMint(_shares) * fee.depositFee) /
+            MULTIPLIER;
+        uint256 feeShares = super.previewWithdraw(feeAssets);
 
-        DLP.safeTransferFrom(msg.sender, treasury, feeAmount);
+        DLP.safeTransferFrom(msg.sender, treasury, feeAssets);
 
         return _shares - feeShares;
     }
@@ -428,10 +437,14 @@ contract DLPVault is
     ) internal returns (uint256) {
         if (fee.withdrawFee == 0) return _assets;
 
-        uint256 feeAssets = (_assets * fee.withdrawFee) / MULTIPLIER;
-        uint256 feeAmount = super.previewWithdraw(feeAssets);
+        uint256 feeShares = (super.previewWithdraw(_assets) * fee.withdrawFee) /
+            MULTIPLIER;
+        uint256 feeAssets = super.previewMint(feeShares);
 
-        super._transfer(_owner, treasury, feeAmount);
+        if (msg.sender != _owner) {
+            super._spendAllowance(_owner, msg.sender, feeShares);
+        }
+        super._transfer(_owner, treasury, feeShares);
 
         return _assets - feeAssets;
     }
@@ -442,11 +455,14 @@ contract DLPVault is
     ) internal returns (uint256) {
         if (fee.withdrawFee == 0) return _shares;
 
-        uint256 feeAmount = (_shares * fee.withdrawFee) / MULTIPLIER;
+        uint256 feeShares = (_shares * fee.withdrawFee) / MULTIPLIER;
 
-        super._transfer(_owner, treasury, feeAmount);
+        if (msg.sender != _owner) {
+            super._spendAllowance(_owner, msg.sender, feeShares);
+        }
+        super._transfer(_owner, treasury, feeShares);
 
-        return _shares - feeAmount;
+        return _shares - feeShares;
     }
 
     function getFee()
@@ -503,6 +519,8 @@ contract DLPVault is
     }
 
     function compound() public {
+        if (totalSupply() == 0) return;
+
         // reward balance before
         uint256 length = rewards.length;
         uint256[] memory balanceBefore = new uint256[](length);
@@ -520,8 +538,6 @@ contract DLPVault is
         MFD.getAllRewards();
 
         // reward harvested
-        uint256 amountWETH;
-
         for (uint256 i = 0; i < length; ) {
             RewardInfo storage reward = rewards[i];
             uint256 harvested = IERC20(reward.token).balanceOf(address(this)) -
@@ -529,7 +545,7 @@ contract DLPVault is
 
             reward.pending += harvested;
             _sendCompoundFee(i, harvested);
-            amountWETH += _swapToWETH(i);
+            _swapToWETH(i);
 
             unchecked {
                 ++i;
@@ -537,10 +553,10 @@ contract DLPVault is
         }
 
         // add liquidity
-        _joinPool(amountWETH);
+        _joinPool();
 
         // withdraw expired lock
-        MFD.withdrawExpiredLocksFor(address(this));
+        MFD.withdrawExpiredLocksForWithOptions(address(this), 0, true);
 
         // process withdrawal queue
         _processWithdrawalQueue();
@@ -549,14 +565,14 @@ contract DLPVault is
         _stakeDLP();
     }
 
-    function _swapToWETH(uint256 _index) internal returns (uint256) {
+    function _swapToWETH(uint256 _index) internal {
         RewardInfo storage reward = rewards[_index];
 
+        // Threshold
         if (
             reward.pending <
             (10 ** (IERC20Metadata(reward.token).decimals() - 2))
-        ) return 0;
-        if (totalSupply() == 0) return 0;
+        ) return;
 
         address swapToken;
         uint256 swapAmount;
@@ -583,38 +599,48 @@ contract DLPVault is
 
         reward.pending = 0;
 
-        // Balancer Swap (REWARD -> WETH)
-        IERC20(swapToken).safeApprove(address(VAULT), swapAmount);
+        // UniswapV3 Swap (REWARD -> WETH)
+        if (swapToken == address(WETH)) {
+            return;
+        }
 
-        IVault.SingleSwap memory singleSwap;
-        singleSwap.poolId = reward.poolId;
-        singleSwap.kind = IVault.SwapKind.GIVEN_IN;
-        singleSwap.assetIn = IAsset(swapToken);
-        singleSwap.assetOut = IAsset(address(VAULT.WETH()));
-        singleSwap.amount = swapAmount;
+        IERC20(swapToken).safeApprove(address(SWAP_ROUTER), swapAmount);
 
-        IVault.FundManagement memory funds;
-        funds.sender = address(this);
-        funds.recipient = payable(this);
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+            .ExactInputSingleParams({
+                tokenIn: swapToken,
+                tokenOut: address(WETH),
+                fee: reward.poolFee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: swapAmount,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
 
-        return VAULT.swap(singleSwap, funds, 0, block.timestamp);
+        SWAP_ROUTER.exactInputSingle(params);
     }
 
-    function _joinPool(uint256 _amountWETH) internal {
-        if (_amountWETH == 0) return;
+    function _joinPool() internal {
+        uint256 _amountWETH = WETH.balanceOf(address(this));
+        if (_amountWETH < 0.01 ether) return;
 
         // Balancer Join Pool (WETH <> RDNT)
         WETH.approve(address(VAULT), _amountWETH);
 
-        IAsset[] memory assets = new IAsset[](1);
-        assets[0] = IAsset(address(WETH));
+        IAsset[] memory assets = new IAsset[](2);
+        assets[0] = IAsset(address(RDNT));
+        assets[1] = IAsset(address(WETH));
 
-        uint256[] memory maxAmountsIn = new uint256[](1);
-        maxAmountsIn[0] = _amountWETH;
+        uint256[] memory maxAmountsIn = new uint256[](2);
+        maxAmountsIn[0] = 0;
+        maxAmountsIn[1] = _amountWETH;
 
         IVault.JoinPoolRequest memory request;
+
         request.assets = assets;
         request.maxAmountsIn = maxAmountsIn;
+        request.userData = abi.encode(1, maxAmountsIn, 0);
 
         VAULT.joinPool(
             RDNT_WETH_POOL_ID,
@@ -633,7 +659,8 @@ contract DLPVault is
     }
 
     function _stakeTokens(uint256 _amount) internal {
-        if (_amount == 0) return;
+        if (_amount < IBountyManager(MFD.bountyManager()).minDLPBalance())
+            return;
 
         MFD.stake(_amount, address(this), defaultLockIndex);
     }
@@ -768,9 +795,10 @@ contract DLPVault is
         uint256 index = withdrawalQueues.length;
         withdrawalQueues.push(
             WithdrawalQueue({
-                receiver: _receiver,
                 assets: _assets,
-                isClaimed: false
+                receiver: _receiver,
+                isClaimed: false,
+                createdAt: uint32(block.timestamp)
             })
         );
 
