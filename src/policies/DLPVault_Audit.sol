@@ -468,7 +468,6 @@ contract DLPVault is
     function getFee()
         external
         view
-        override
         returns (uint256 depositFee, uint256 withdrawFee, uint256 compoundFee)
     {
         depositFee = fee.depositFee;
@@ -477,23 +476,31 @@ contract DLPVault is
     }
 
     //============================================================================================//
-    //                                     REWARDS LOGIC                                          //
+    //                                    LEVERAGER LOGIC                                         //
     //============================================================================================//
 
     function executeOperation(
         address _asset,
         uint256 amount,
-        uint256,
+        uint256 premium,
         address initiator,
-        bytes calldata
+        bytes calldata params
     )
         external
         override
         onlyAaveLendingPool
         onlyLeverager(initiator)
-        returns (bool success)
+        returns (bool)
     {
-        // Repay approval
+        // approve
+        if (
+            IERC20(_asset).allowance(address(this), address(LENDING_POOL)) == 0
+        ) {
+            IERC20(_asset).safeApprove(
+                address(LENDING_POOL),
+                type(uint256).max
+            );
+        }
         if (
             IERC20(_asset).allowance(
                 address(this),
@@ -506,17 +513,31 @@ contract DLPVault is
             );
         }
 
-        uint256 withdrawAmount = amount / 2;
-        uint256 amountPlusPremium = withdrawAmount +
-            (withdrawAmount * AAVE_LENDING_POOL.FLASHLOAN_PREMIUM_TOTAL()) /
-            1e4;
+        // repay looping
+        uint256 interestRateMode = 2; // variable
+        LENDING_POOL.repay(_asset, amount, interestRateMode, address(this));
 
-        LENDING_POOL.repay(_asset, amount, 2, address(this));
-        LENDING_POOL.withdraw(_asset, amount / 2, initiator);
-        LENDING_POOL.withdraw(_asset, amountPlusPremium, address(this));
+        // withdraw
+        uint256 withdrawAmount = abi.decode(params, (uint256));
+        LENDING_POOL.withdraw(_asset, withdrawAmount - premium, initiator);
+
+        // repay flashloan
+        LENDING_POOL.withdraw(_asset, amount + premium, address(this));
 
         return true;
     }
+
+    function withdrawForLeverager(
+        address _account,
+        uint256 _amount
+    ) external override onlyLeverager(msg.sender) {
+        MFD.withdraw(_amount);
+        RDNT.safeTransfer(_account, _amount);
+    }
+
+    //============================================================================================//
+    //                                     REWARDS LOGIC                                          //
+    //============================================================================================//
 
     function compound() public {
         if (totalSupply() == 0) return;
@@ -587,7 +608,7 @@ contract DLPVault is
             swapToken = IAToken(reward.token).UNDERLYING_ASSET_ADDRESS();
             swapAmount = LENDING_POOL.withdraw(
                 swapToken,
-                type(uint256).max,
+                reward.pending,
                 address(this)
             );
         }

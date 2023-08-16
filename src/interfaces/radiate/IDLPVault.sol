@@ -2,8 +2,5 @@
 pragma solidity 0.8.15;
 
 interface IDLPVault {
-    function getFee()
-        external
-        view
-        returns (uint256 depositFee, uint256 withdrawFee, uint256 compoundFee);
+    function withdrawForLeverager(address _account, uint256 _amount) external;
 }

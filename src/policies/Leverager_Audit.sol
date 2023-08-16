@@ -4,7 +4,8 @@ pragma abicoder v2;
 
 import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ERC4626, ERC20} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 
 import {Kernel, Keycode, Permissions, toKeycode, Policy} from "../Kernel.sol";
 import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
@@ -13,10 +14,18 @@ import {IDLPVault} from "../interfaces/radiate/IDLPVault.sol";
 import {IAToken} from "../interfaces/radiant-interfaces/IAToken.sol";
 import {ILendingPool, DataTypes} from "../interfaces/radiant-interfaces/ILendingPool.sol";
 import {IVariableDebtToken} from "../interfaces/radiant-interfaces/IVariableDebtToken.sol";
+import {IChefIncentivesController} from "../interfaces/radiant-interfaces/IChefIncentivesController.sol";
+import {IMultiFeeDistribution} from "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
 import {IPool} from "../interfaces/aave/IPool.sol";
+import {IFlashLoanSimpleReceiver} from "../interfaces/aave/IFlashLoanSimpleReceiver.sol";
 
-contract Leverager is RolesConsumer, Policy, ERC4626 {
+contract Leverager is
+    ReentrancyGuardUpgradeable,
+    RolesConsumer,
+    IFlashLoanSimpleReceiver
+{
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     //============================================================================================//
     //                                         CONSTANT                                           //
@@ -26,6 +35,14 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     ILendingPool public constant LENDING_POOL =
         ILendingPool(0xF4B1486DD74D07706052A33d31d7c0AAFD0659E1);
 
+    /// @notice Chef Incentives Controller
+    IChefIncentivesController public constant CHEF_INCENTIVES_CONTROLLER =
+        IChefIncentivesController(0xebC85d44cefb1293707b11f707bd3CEc34B4D5fA);
+
+    /// @notice Multi Fee Distributor
+    IMultiFeeDistribution public constant MFD =
+        IMultiFeeDistribution(0x76ba3eC5f5adBf1C58c91e86502232317EeA72dE);
+
     /// @notice Aave lending pool address (for flashloans)
     IPool public constant AAVE_LENDING_POOL =
         IPool(0x794a61358D6845594F94dc1DB02A252b5b4814aD);
@@ -33,86 +50,129 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     /// @notice Multiplier 100%
     uint256 public constant MULTIPLIER = 1e6;
 
+    /// @notice Precision
+    uint256 public constant PRECISION = 1e20;
+
+    uint256 internal constant _RAY = 1e27;
+    uint256 internal constant _HALF_RAY = _RAY / 2;
+
     //============================================================================================//
     //                                          STORAGE                                           //
     //============================================================================================//
 
-    /// @notice treasury wallet
-    address public treasury;
+    /// @notice kernel
+    Kernel public kernel;
 
-    /// @notice `True` when emergency unlooping
-    bool public emergencyUnlooping;
+    /// @notice Dlp vault contract
+    IDLPVault public dlpVault;
 
-    /// @notice Minimum invest amount
-    uint256 public immutable minAmountToInvest;
-
-    /// @notice vault cap
-    uint256 public vaultCap;
-
-    /// @notice Loop count
-    uint256 public loopCount;
+    /// @notice Staking token
+    IERC20 public asset;
 
     /// @notice Borrow ratio
     uint256 public borrowRatio;
 
-    /// @notice Dlp vault contract
-    IDLPVault public immutable dlpVault;
+    /// @notice Acc token per share
+    uint256 public accTokenPerShare;
+
+    /// @notice Total scaled balance of aToken
+    uint256 public totalSB;
+
+    /// @notice Stake info
+    struct Stake {
+        uint256 aTSB; // aToken's scaled balance
+        uint256 dTSB; // debtToken's scaled balance
+        uint256 pending;
+        uint256 debt;
+    }
+    mapping(address => Stake) public stakeInfo;
+
+    /// @notice Claim info
+    struct Claim {
+        uint256 amount;
+        address receiver;
+        bool isClaimed;
+        uint32 expireAt;
+    }
+    uint256 public claimIndex;
+    mapping(uint256 => Claim) public claimInfo;
+    mapping(address => EnumerableSet.UintSet) private _userClaims;
 
     //============================================================================================//
     //                                           EVENT                                            //
     //============================================================================================//
 
-    event VaultCapUpdated(uint256 vaultCap);
-    event LoopCountUpdated(uint256 loopCount);
+    event KernelChanged(address kernel);
     event BorrowRatioUpdated(uint256 borrowRatio);
-    event Unloop(uint256 amount);
-    event EmergencyUnloop(uint256 amount);
+    event Staked(address indexed account, uint256 amount);
+    event Unstaked(address indexed account, uint256 amount);
+    event Claimed(
+        address indexed account,
+        uint256 indexed index,
+        uint256 amount,
+        uint32 expireAt
+    );
+    event ClaimedVested(
+        address indexed account,
+        uint256 indexed index,
+        uint256 amount
+    );
 
     //============================================================================================//
     //                                           ERROR                                            //
     //============================================================================================//
 
+    error CALLER_NOT_KERNEL();
+    error CALLER_NOT_AAVE();
+    error MATH_MULTIPLICATION_OVERFLOW();
     error INVALID_AMOUNT();
-    error EXCEED_VAULT_CAP(uint256 vaultCap);
+    error INVALID_UNSTAKE();
+    error INVALID_CLAIM();
     error ERROR_BORROW_RATIO(uint256 borrowRatio);
-    error CANNOT_WITHDRAW_AFTER_EMERGENCY_UNLOOP();
-    error TOO_LOW_DEPOSIT();
-    error EXCEED_MAX_WITHDRAW();
-    error LOOP_COUNT_TOO_BIG();
 
     //============================================================================================//
     //                                         INITIALIZE                                         //
     //============================================================================================//
 
-    constructor(
-        uint256 _minAmountToInvest,
-        uint256 _vaultCap,
-        uint256 _loopCount,
-        uint256 _borrowRatio,
-        IDLPVault _dlpVault,
-        IERC20Metadata _asset,
-        Kernel _kernel
-    )
-        Policy(_kernel)
-        ERC4626(_asset)
-        ERC20(
-            string(abi.encodePacked("Radiate ", _asset.name())),
-            string(abi.encodePacked("rd-", _asset.symbol()))
-        )
-    {
-        if (_minAmountToInvest == 0) revert INVALID_AMOUNT();
-        if (_borrowRatio > MULTIPLIER) revert ERROR_BORROW_RATIO(_borrowRatio);
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
-        minAmountToInvest = _minAmountToInvest;
-        vaultCap = _vaultCap;
-        loopCount = _loopCount;
-        borrowRatio = _borrowRatio;
+    function initialize(
+        Kernel _kernel,
+        IDLPVault _dlpVault,
+        IERC20 _asset,
+        uint256 _borrowRatio
+    ) external initializer {
+        if (_borrowRatio >= MULTIPLIER) revert ERROR_BORROW_RATIO(_borrowRatio);
+
+        kernel = _kernel;
         dlpVault = _dlpVault;
+        asset = _asset;
+        borrowRatio = _borrowRatio;
+
+        _asset.safeApprove(address(LENDING_POOL), type(uint256).max);
+        _asset.safeApprove(address(AAVE_LENDING_POOL), type(uint256).max);
+
+        __ReentrancyGuard_init();
     }
 
     //============================================================================================//
     //                                          MODIFIER                                          //
     //============================================================================================//
+
+    modifier onlyKernel() {
+        if (msg.sender != address(kernel)) revert CALLER_NOT_KERNEL();
+
+        _;
+    }
+
+    modifier onlyAaveLendingPool() {
+        if (msg.sender != address(AAVE_LENDING_POOL)) revert CALLER_NOT_AAVE();
+
+        _;
+    }
 
     modifier onlyAdmin() {
         ROLES.requireRole("admin", msg.sender);
@@ -124,22 +184,28 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     //                                     DEFAULT OVERRIDES                                      //
     //============================================================================================//
 
+    function changeKernel(Kernel _kernel) external onlyKernel {
+        kernel = _kernel;
+
+        emit KernelChanged(address(_kernel));
+    }
+
+    function isActive() external view returns (bool) {
+        return kernel.isPolicyActive(Policy(address(this)));
+    }
+
     function configureDependencies()
         external
-        override
         returns (Keycode[] memory dependencies)
     {
         dependencies = new Keycode[](2);
         dependencies[0] = toKeycode("ROLES");
-        dependencies[1] = toKeycode("TRSRY");
-        ROLES = ROLESv1(getModuleAddress(dependencies[0]));
-        treasury = getModuleAddress(dependencies[1]);
+        ROLES = ROLESv1(address(kernel.getModuleForKeycode(dependencies[0])));
     }
 
     function requestPermissions()
         external
         pure
-        override
         returns (Permissions[] memory requests)
     {
         requests = new Permissions[](0);
@@ -149,47 +215,125 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     //                                         ADMIN                                              //
     //============================================================================================//
 
-    /// @dev set vault cap (scaled by asset.decimals)
-    function setVaultCap(uint256 _vaultCap) external onlyAdmin {
-        vaultCap = _vaultCap;
-
-        emit VaultCapUpdated(_vaultCap);
-    }
-
-    /// @dev Set loop count for any new deposits
-    function setLoopCount(uint256 _loopCount) external onlyAdmin {
-        if (loopCount > 20) revert LOOP_COUNT_TOO_BIG();
-        loopCount = _loopCount;
-
-        emit LoopCountUpdated(_loopCount);
-    }
-
-    /// @dev Set borrow ratio for any new deposits
-    function setBorrowRatio(uint256 _borrowRatio) external onlyAdmin {
-        if (_borrowRatio > MULTIPLIER) revert ERROR_BORROW_RATIO(_borrowRatio);
-
-        borrowRatio = _borrowRatio;
-
-        emit BorrowRatioUpdated(_borrowRatio);
-    }
-
-    /// @dev Emergency Unloop – withdraws all funds from Radiant to vault
-    /// For migrations, or in case of emergency
-    function emergencyUnloop(uint256 _amount) external onlyAdmin {
-        _unloop(_amount);
-        emergencyUnlooping = true;
-
-        emit EmergencyUnloop(_amount);
-    }
-
     function recoverERC20(
         IERC20 _token,
         uint256 _tokenAmount
     ) external onlyAdmin {
-        if (address(_token) == asset() && emergencyUnlooping) {
-            revert CANNOT_WITHDRAW_AFTER_EMERGENCY_UNLOOP();
-        }
         _token.safeTransfer(msg.sender, _tokenAmount);
+    }
+
+    //============================================================================================//
+    //                                     LENDING LOGIC                                          //
+    //============================================================================================//
+
+    /**
+     * @dev Returns the configuration of the reserve
+     * @return The configuration of the reserve
+     *
+     */
+    function getConfiguration()
+        public
+        view
+        returns (DataTypes.ReserveConfigurationMap memory)
+    {
+        return LENDING_POOL.getConfiguration(address(asset));
+    }
+
+    /**
+     * @dev Returns variable debt token address of asset
+     * @return varaiableDebtToken address of the asset
+     *
+     */
+    function getVDebtToken() public view returns (address) {
+        DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
+            address(asset)
+        );
+        return reserveData.variableDebtTokenAddress;
+    }
+
+    /**
+     * @dev Returns atoken address of asset
+     * @return varaiableDebtToken address of the asset
+     *
+     */
+    function getAToken() public view returns (address) {
+        DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
+            address(asset)
+        );
+        return reserveData.aTokenAddress;
+    }
+
+    /**
+     * @dev Returns loan to value
+     * @return ltv of the asset
+     *
+     */
+    function ltv() public view returns (uint256) {
+        DataTypes.ReserveConfigurationMap memory conf = LENDING_POOL
+            .getConfiguration(address(asset));
+        return conf.data % (2 ** 16);
+    }
+
+    /**
+     * @dev Divides two ray, rounding half up to the nearest ray
+     * @param a Ray
+     * @param b Ray
+     * @return The result of a/b, in ray
+     **/
+    function _rayMul(uint256 a, uint256 b) internal pure returns (uint256) {
+        if (a == 0 || b == 0) {
+            return 0;
+        }
+
+        if (a > (type(uint256).max - _HALF_RAY) / b)
+            revert MATH_MULTIPLICATION_OVERFLOW();
+
+        return (a * b + _HALF_RAY) / _RAY;
+    }
+
+    //============================================================================================//
+    //                                     REWARDS LOGIC                                          //
+    //============================================================================================//
+
+    function _update() internal {
+        if (totalSB == 0) return;
+
+        // claim reward
+        uint256 reward;
+        {
+            address[] memory tokens = new address[](2);
+            tokens[0] = getAToken();
+            tokens[1] = getVDebtToken();
+            uint256[] memory rewards = CHEF_INCENTIVES_CONTROLLER
+                .pendingRewards(address(dlpVault), tokens);
+            uint256 length = rewards.length;
+
+            for (uint256 i = 0; i < length; ) {
+                unchecked {
+                    reward += rewards[i];
+                    ++i;
+                }
+            }
+
+            if (reward == 0) return;
+
+            CHEF_INCENTIVES_CONTROLLER.claim(address(dlpVault), tokens);
+        }
+
+        // update rate
+        accTokenPerShare += (reward * PRECISION) / totalSB;
+    }
+
+    function _updatePending(address _account) internal {
+        Stake storage info = stakeInfo[_account];
+
+        info.pending = (accTokenPerShare * info.aTSB) / PRECISION - info.debt;
+    }
+
+    function _updateDebt(address _account) internal {
+        Stake storage info = stakeInfo[_account];
+
+        info.debt = (accTokenPerShare * info.aTSB) / PRECISION;
     }
 
     //============================================================================================//
@@ -197,287 +341,224 @@ contract Leverager is RolesConsumer, Policy, ERC4626 {
     //============================================================================================//
 
     /**
-     * @dev Returns the configuration of the reserve
-     * @param _asset The address of the underlying asset of the reserve
-     * @return The configuration of the reserve
-     *
-     */
-    function getConfiguration(
-        address _asset
-    ) public view returns (DataTypes.ReserveConfigurationMap memory) {
-        return LENDING_POOL.getConfiguration(_asset);
-    }
-
-    /**
-     * @dev Returns variable debt token address of asset
-     * @param _asset The address of the underlying asset of the reserve
-     * @return varaiableDebtToken address of the asset
-     *
-     */
-    function getVDebtToken(address _asset) public view returns (address) {
-        DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
-            _asset
-        );
-        return reserveData.variableDebtTokenAddress;
-    }
-
-    /**
-     * @dev Returns atoken address of asset
-     * @param _asset The address of the underlying asset of the reserve
-     * @return varaiableDebtToken address of the asset
-     *
-     */
-    function getAToken(address _asset) public view returns (address) {
-        DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
-            _asset
-        );
-        return reserveData.aTokenAddress;
-    }
-
-    /**
-     * @dev Returns loan to value
-     * @param asset_ The address of the underlying asset of the reserve
-     * @return ltv of the asset
-     *
-     */
-    function ltv(address asset_) public view returns (uint256) {
-        DataTypes.ReserveConfigurationMap memory conf = LENDING_POOL
-            .getConfiguration(asset_);
-        return conf.data % (2 ** 16);
-    }
-
-    /**
      * @dev Loop the deposit and borrow of an asset (removed eth loop, deposit WETH directly)
      *
      */
-    function _loop() internal {
-        uint16 referralCode = 0;
-        IERC20 baseAsset = IERC20(asset());
-        uint256 amount = baseAsset.balanceOf(address(this));
-        uint256 interestRateMode = 2; // variable
+    function _loop(uint256 amount) internal {
+        if (amount == 0) return;
 
-        if (baseAsset.allowance(address(this), address(LENDING_POOL)) == 0) {
-            baseAsset.safeApprove(address(LENDING_POOL), type(uint256).max);
-        }
+        IAToken aToken = IAToken(getAToken());
+        IVariableDebtToken debtToken = IVariableDebtToken(getVDebtToken());
 
-        LENDING_POOL.deposit(
-            address(baseAsset),
-            amount,
-            address(dlpVault),
-            referralCode
+        uint256 aTSBBefore = aToken.scaledBalanceOf(address(dlpVault));
+        uint256 dTSBBefore = debtToken.scaledBalanceOf(address(dlpVault));
+
+        // deposit
+        LENDING_POOL.deposit(address(asset), amount, address(dlpVault), 0);
+
+        // flashloan for loop
+        uint256 loanAmount = (amount * borrowRatio) /
+            (MULTIPLIER - borrowRatio);
+        if (loanAmount == 0) return;
+
+        AAVE_LENDING_POOL.flashLoanSimple(
+            address(this),
+            address(asset),
+            loanAmount,
+            "",
+            0
         );
 
-        for (uint256 i = 0; i < loopCount; ) {
-            amount = (amount * borrowRatio) / MULTIPLIER;
+        // stake info
+        Stake storage info = stakeInfo[msg.sender];
+        info.aTSB += aToken.scaledBalanceOf(address(dlpVault)) - aTSBBefore;
+        info.dTSB += debtToken.scaledBalanceOf(address(dlpVault)) - dTSBBefore;
 
-            LENDING_POOL.borrow(
-                address(baseAsset),
-                amount,
-                interestRateMode,
-                referralCode,
-                address(dlpVault)
-            );
+        totalSB += aToken.scaledBalanceOf(address(dlpVault)) - aTSBBefore;
+    }
 
-            LENDING_POOL.deposit(
-                address(baseAsset),
-                amount,
-                address(dlpVault),
-                referralCode
-            );
+    /**
+     * @dev Loop the deposit and borrow of an asset to repay flashloan
+     *
+     */
+    function executeOperation(
+        address _asset,
+        uint256 amount,
+        uint256 premium,
+        address initiator,
+        bytes calldata
+    ) external override onlyAaveLendingPool returns (bool) {
+        require(initiator == address(this));
 
+        // deposit
+        LENDING_POOL.deposit(_asset, amount, address(dlpVault), 0);
+
+        // borrow for repay
+        uint256 borrowAmount = amount + premium; // repay
+        uint256 interestRateMode = 2; // variable
+        LENDING_POOL.borrow(
+            _asset,
+            borrowAmount,
+            interestRateMode,
+            0,
+            address(dlpVault)
+        );
+
+        return true;
+    }
+
+    //============================================================================================//
+    //                                         STAKE LOGIC                                        //
+    //============================================================================================//
+
+    function staked(
+        address _account
+    ) public view returns (uint256 aTokenAmount, uint256 debtTokenAmount) {
+        Stake storage info = stakeInfo[_account];
+
+        aTokenAmount = _rayMul(
+            info.aTSB,
+            LENDING_POOL.getReserveNormalizedIncome(address(asset))
+        );
+        debtTokenAmount = _rayMul(
+            info.dTSB,
+            LENDING_POOL.getReserveNormalizedVariableDebt(address(asset))
+        );
+    }
+
+    function stake(uint256 _amount) external nonReentrant {
+        if (_amount == 0) revert INVALID_AMOUNT();
+
+        _update();
+        _updatePending(msg.sender);
+
+        asset.safeTransferFrom(msg.sender, address(this), _amount);
+        _loop(_amount);
+
+        _updateDebt(msg.sender);
+
+        emit Staked(msg.sender, _amount);
+    }
+
+    function unstakeable(address _account) public view returns (uint256) {
+        (uint256 aTokenAmount, uint256 debtTokenAmount) = staked(_account);
+
+        if (aTokenAmount > debtTokenAmount) return 0;
+
+        return aTokenAmount - debtTokenAmount;
+    }
+
+    function unstake(uint256 _amount) external nonReentrant {
+        if (_amount == 0) revert INVALID_AMOUNT();
+
+        uint256 unstakeableAmount = unstakeable(msg.sender);
+        if (_amount > unstakeableAmount) revert INVALID_UNSTAKE();
+
+        Stake storage info = stakeInfo[msg.sender];
+        uint256 repayAmount = (info.dTSB * _amount) / unstakeableAmount;
+
+        // flashloan for unloop
+        AAVE_LENDING_POOL.flashLoanSimple(
+            address(dlpVault),
+            address(asset),
+            repayAmount,
+            abi.encode(_amount, msg.sender),
+            0
+        );
+
+        info.aTSB -= _amount + repayAmount;
+        info.dTSB -= repayAmount;
+        _updateDebt(msg.sender);
+
+        emit Unstaked(msg.sender, _amount);
+    }
+
+    function claimable(
+        address _account
+    ) external view returns (uint256 pending, uint256 expireAt) {
+        uint256 reward;
+        {
+            address[] memory tokens = new address[](2);
+            tokens[0] = getAToken();
+            tokens[1] = getVDebtToken();
+            uint256[] memory rewards = CHEF_INCENTIVES_CONTROLLER
+                .pendingRewards(address(dlpVault), tokens);
+            uint256 length = rewards.length;
+
+            for (uint256 i = 0; i < length; ) {
+                unchecked {
+                    reward += rewards[i];
+                    ++i;
+                }
+            }
+        }
+
+        uint256 _accTokenPerShare = accTokenPerShare +
+            (reward * PRECISION) /
+            totalSB;
+        Stake memory info = stakeInfo[_account];
+
+        pending =
+            info.pending +
+            (_accTokenPerShare * info.aTSB) /
+            PRECISION -
+            info.debt;
+        expireAt = block.timestamp + MFD.vestDuration();
+    }
+
+    function claim() external nonReentrant {
+        _update();
+        _updatePending(msg.sender);
+        _updateDebt(msg.sender);
+
+        Stake storage info = stakeInfo[msg.sender];
+        uint256 pending = info.pending;
+
+        if (pending > 0) {
+            info.pending = 0;
+
+            uint256 index = ++claimIndex;
+            uint32 expireAt = uint32(block.timestamp + MFD.vestDuration());
+
+            Claim storage _info = claimInfo[index];
+            _info.amount = pending;
+            _info.receiver = msg.sender;
+            _info.expireAt = expireAt;
+
+            _userClaims[msg.sender].add(index);
+
+            emit Claimed(msg.sender, index, pending, expireAt);
+        }
+    }
+
+    function claimed(
+        address _account
+    ) external view returns (Claim[] memory info) {
+        EnumerableSet.UintSet storage claims = _userClaims[_account];
+        uint256 length = claims.length();
+
+        info = new Claim[](length);
+
+        for (uint256 i = 0; i < length; ) {
+            info[i] = claimInfo[claims.at(i)];
             unchecked {
                 ++i;
             }
         }
     }
 
-    /**
-     * @dev Loop the withdraw and repay of an asset
-     * @param _amount of tokens to free from loop
-     */
-    function _unloop(uint256 _amount) internal {
-        bytes memory params = "";
-        AAVE_LENDING_POOL.flashLoanSimple(
-            address(dlpVault),
-            asset(),
-            _amount * 2,
-            params,
-            0
-        );
+    function claimVested(uint256 _index) external nonReentrant {
+        Claim storage info = claimInfo[_index];
+        if (
+            info.amount == 0 ||
+            info.isClaimed ||
+            info.expireAt >= block.timestamp ||
+            !_userClaims[info.receiver].remove(_index)
+        ) revert INVALID_CLAIM();
 
-        emit Unloop(_amount);
-    }
+        info.isClaimed = true;
+        dlpVault.withdrawForLeverager(info.receiver, info.amount);
 
-    /**
-     * @dev Unloop if needed
-     */
-    function _unloopIfNeeded(
-        uint256 _amount
-    ) internal returns (uint256 flashLoanFee) {
-        uint256 balance = IERC20(asset()).balanceOf(address(this));
-
-        if (_amount > balance) {
-            uint256 amountToWithdraw = _amount - balance;
-            flashLoanFee =
-                (amountToWithdraw *
-                    2 *
-                    AAVE_LENDING_POOL.FLASHLOAN_PREMIUM_TOTAL()) /
-                1e4;
-
-            _unloop(amountToWithdraw);
-        }
-    }
-
-    //============================================================================================//
-    //                                       FEE LOGIC                                            //
-    //============================================================================================//
-
-    function _sendDepositFee(uint256 _assets) internal returns (uint256) {
-        (uint256 depositFee, , ) = dlpVault.getFee();
-        if (depositFee == 0) return _assets;
-
-        uint256 feeAmount = (_assets * depositFee) / MULTIPLIER;
-
-        IERC20(asset()).safeTransferFrom(msg.sender, treasury, feeAmount);
-
-        return _assets - feeAmount;
-    }
-
-    function _sendMintFee(uint256 _shares) internal returns (uint256) {
-        (uint256 depositFee, , ) = dlpVault.getFee();
-        if (depositFee == 0) return _shares;
-
-        uint256 feeShares = (_shares * depositFee) / MULTIPLIER;
-        uint256 feeAmount = super.previewMint(feeShares);
-
-        IERC20(asset()).safeTransferFrom(msg.sender, treasury, feeAmount);
-
-        return _shares - feeShares;
-    }
-
-    function _sendWithdrawFee(
-        uint256 _assets,
-        address _owner
-    ) internal returns (uint256) {
-        (, uint256 withdrawFee, ) = dlpVault.getFee();
-        if (withdrawFee == 0) return _assets;
-
-        uint256 feeAssets = (_assets * withdrawFee) / MULTIPLIER;
-        uint256 feeAmount = super.previewWithdraw(feeAssets);
-
-        super._transfer(_owner, treasury, feeAmount);
-
-        return _assets - feeAssets;
-    }
-
-    function _sendRedeemFee(
-        uint256 _shares,
-        address _owner
-    ) internal returns (uint256) {
-        (, uint256 withdrawFee, ) = dlpVault.getFee();
-        if (withdrawFee == 0) return _shares;
-
-        uint256 feeAmount = (_shares * withdrawFee) / MULTIPLIER;
-
-        super._transfer(_owner, treasury, feeAmount);
-
-        return _shares - feeAmount;
-    }
-
-    function _sendFlashLoanFee(
-        uint256 _assets,
-        address _owner
-    ) internal returns (uint256) {
-        uint256 feeAmount = super.previewWithdraw(_assets);
-
-        super._transfer(_owner, treasury, feeAmount);
-
-        return feeAmount;
-    }
-
-    //============================================================================================//
-    //                                      ERC4626 OVERRIDES                                     //
-    //============================================================================================//
-
-    function totalAssets() public view override returns (uint256) {
-        IERC20 baseAsset = IERC20(asset());
-        DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
-            address(baseAsset)
-        );
-        IAToken aToken = IAToken(reserveData.aTokenAddress);
-        IVariableDebtToken vdToken = IVariableDebtToken(
-            reserveData.variableDebtTokenAddress
-        );
-        uint256 amount = aToken.scaledBalanceOf(address(dlpVault));
-        uint256 debt = vdToken.scaledBalanceOf(address(dlpVault));
-
-        return baseAsset.balanceOf(address(this)) + amount - debt;
-    }
-
-    function deposit(
-        uint256 _assets,
-        address _receiver
-    ) public virtual override returns (uint256) {
-        _assets = _sendDepositFee(_assets);
-        if (totalAssets() + _assets > vaultCap) {
-            revert EXCEED_VAULT_CAP(totalAssets() + _assets);
-        }
-
-        uint256 shares = super.deposit(_assets, _receiver);
-        if (shares == 0) revert TOO_LOW_DEPOSIT();
-
-        _loop();
-
-        return shares;
-    }
-
-    function mint(
-        uint256 _shares,
-        address _receiver
-    ) public virtual override returns (uint256) {
-        _shares = _sendMintFee(_shares);
-        if (_shares == 0) revert TOO_LOW_DEPOSIT();
-
-        uint256 assets = super.mint(_shares, _receiver);
-        if (totalAssets() > vaultCap) revert EXCEED_VAULT_CAP(totalAssets());
-
-        _loop();
-
-        return assets;
-    }
-
-    function withdraw(
-        uint256 _assets,
-        address _receiver,
-        address _owner
-    ) public virtual override returns (uint256) {
-        _assets = _sendWithdrawFee(_assets, _owner);
-
-        uint256 flashLoanFee = _unloopIfNeeded(_assets);
-        _sendFlashLoanFee(flashLoanFee, _owner);
-
-        uint256 shares = super.withdraw(
-            _assets - flashLoanFee,
-            _receiver,
-            _owner
-        );
-
-        return shares;
-    }
-
-    function redeem(
-        uint256 _shares,
-        address _receiver,
-        address _owner
-    ) public virtual override returns (uint256) {
-        _shares = _sendRedeemFee(_shares, _owner);
-
-        uint256 assets = super.previewRedeem(_shares);
-        uint256 flashLoanFee = _unloopIfNeeded(assets);
-        _shares -= _sendFlashLoanFee(flashLoanFee, _owner);
-
-        assets = super.redeem(_shares, _receiver, _owner);
-
-        return assets;
+        emit ClaimedVested(info.receiver, _index, info.amount);
     }
 }

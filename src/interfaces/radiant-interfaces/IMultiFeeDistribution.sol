@@ -18,6 +18,8 @@ interface IMultiFeeDistribution is IFeeDistribution {
 
     function rdntToken() external view returns (IMintableToken);
 
+    function vestDuration() external view returns (uint256);
+
     function getPriceProvider() external view returns (address);
 
     function lockInfo(

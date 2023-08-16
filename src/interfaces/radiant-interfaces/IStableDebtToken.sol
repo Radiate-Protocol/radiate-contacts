@@ -66,7 +66,12 @@ interface IStableDebtToken is IInitializableDebtToken {
      * @param rate The rate of the debt being minted
      *
      */
-    function mint(address user, address onBehalfOf, uint256 amount, uint256 rate) external returns (bool);
+    function mint(
+        address user,
+        address onBehalfOf,
+        uint256 amount,
+        uint256 rate
+    ) external returns (bool);
 
     /**
      * @dev Burns debt of `user`
@@ -103,7 +108,10 @@ interface IStableDebtToken is IInitializableDebtToken {
      * @dev Returns the principal, the total supply and the average stable rate
      *
      */
-    function getSupplyData() external view returns (uint256, uint256, uint256, uint40);
+    function getSupplyData()
+        external
+        view
+        returns (uint256, uint256, uint256, uint40);
 
     /**
      * @dev Returns the timestamp of the last update of the total supply
@@ -116,7 +124,10 @@ interface IStableDebtToken is IInitializableDebtToken {
      * @dev Returns the total supply and the average stable rate
      *
      */
-    function getTotalSupplyAndAvgRate() external view returns (uint256, uint256);
+    function getTotalSupplyAndAvgRate()
+        external
+        view
+        returns (uint256, uint256);
 
     /**
      * @dev Returns the principal debt balance of the user
@@ -129,5 +140,14 @@ interface IStableDebtToken is IInitializableDebtToken {
      * @dev Returns the address of the incentives controller contract
      *
      */
-    function getIncentivesController() external view returns (IAaveIncentivesController);
+    function getIncentivesController()
+        external
+        view
+        returns (IAaveIncentivesController);
+
+    /**
+     * @dev Calculates the current user debt balance
+     * @return The accumulated debt of the user
+     **/
+    function balanceOf(address) external view returns (uint256);
 }

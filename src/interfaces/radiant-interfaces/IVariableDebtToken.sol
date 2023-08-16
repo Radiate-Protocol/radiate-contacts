@@ -20,7 +20,12 @@ interface IVariableDebtToken is IScaledBalanceToken, IInitializableDebtToken {
      * @param index The last index of the reserve
      *
      */
-    event Mint(address indexed from, address indexed onBehalfOf, uint256 value, uint256 index);
+    event Mint(
+        address indexed from,
+        address indexed onBehalfOf,
+        uint256 value,
+        uint256 index
+    );
 
     /**
      * @dev Mints debt token to the `onBehalfOf` address
@@ -32,7 +37,12 @@ interface IVariableDebtToken is IScaledBalanceToken, IInitializableDebtToken {
      * @return `true` if the the previous balance of the user is 0
      *
      */
-    function mint(address user, address onBehalfOf, uint256 amount, uint256 index) external returns (bool);
+    function mint(
+        address user,
+        address onBehalfOf,
+        uint256 amount,
+        uint256 index
+    ) external returns (bool);
 
     /**
      * @dev Emitted when variable debt is burnt
@@ -55,5 +65,14 @@ interface IVariableDebtToken is IScaledBalanceToken, IInitializableDebtToken {
      * @dev Returns the address of the incentives controller contract
      *
      */
-    function getIncentivesController() external view returns (IAaveIncentivesController);
+    function getIncentivesController()
+        external
+        view
+        returns (IAaveIncentivesController);
+
+    /**
+     * @dev Calculates the current user debt balance
+     * @return The accumulated debt of the user
+     **/
+    function balanceOf(address) external view returns (uint256);
 }
