@@ -518,8 +518,11 @@ contract DLPVault is
         LENDING_POOL.repay(_asset, amount, interestRateMode, address(this));
 
         // withdraw
-        uint256 withdrawAmount = abi.decode(params, (uint256));
-        LENDING_POOL.withdraw(_asset, withdrawAmount - premium, initiator);
+        (uint256 withdrawAmount, address account) = abi.decode(
+            params,
+            (uint256, address)
+        );
+        LENDING_POOL.withdraw(_asset, withdrawAmount - premium, account);
 
         // repay flashloan
         LENDING_POOL.withdraw(_asset, amount + premium, address(this));
