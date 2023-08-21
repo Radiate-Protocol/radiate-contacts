@@ -2,8 +2,11 @@
 pragma solidity 0.8.15;
 pragma abicoder v2;
 
+import "forge-std/console2.sol";
+
 import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 
@@ -11,6 +14,8 @@ import {Kernel, Keycode, Permissions, toKeycode, Policy} from "../Kernel.sol";
 import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
 
 import {IDLPVault} from "../interfaces/radiate/IDLPVault.sol";
+import {ILeverager} from "../interfaces/radiate/ILeverager.sol";
+import {IRewardDistributor} from "../interfaces/radiate/IRewardDistributor.sol";
 import {IAToken} from "../interfaces/radiant-interfaces/IAToken.sol";
 import {ILendingPool, DataTypes} from "../interfaces/radiant-interfaces/ILendingPool.sol";
 import {IVariableDebtToken} from "../interfaces/radiant-interfaces/IVariableDebtToken.sol";
@@ -22,14 +27,20 @@ import {IFlashLoanSimpleReceiver} from "../interfaces/aave/IFlashLoanSimpleRecei
 contract Leverager is
     ReentrancyGuardUpgradeable,
     RolesConsumer,
-    IFlashLoanSimpleReceiver
+    IFlashLoanSimpleReceiver,
+    ILeverager
 {
+    using Math for uint256;
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.UintSet;
 
     //============================================================================================//
     //                                         CONSTANT                                           //
     //============================================================================================//
+
+    /// @notice Radiant Token
+    IERC20 public constant RDNT =
+        IERC20(0x3082CC23568eA640225c2467653dB90e9250AaA0);
 
     /// @notice Lending Pool address
     ILendingPool public constant LENDING_POOL =
@@ -69,6 +80,12 @@ contract Leverager is
     /// @notice Staking token
     IERC20 public asset;
 
+    /// @notice Reward distributor
+    IRewardDistributor public distributor;
+
+    /// @notice Fee
+    uint256 public fee;
+
     /// @notice Borrow ratio
     uint256 public borrowRatio;
 
@@ -90,6 +107,7 @@ contract Leverager is
     /// @notice Claim info
     struct Claim {
         uint256 amount;
+        uint256 feeAmount;
         address receiver;
         bool isClaimed;
         uint32 expireAt;
@@ -103,6 +121,7 @@ contract Leverager is
     //============================================================================================//
 
     event KernelChanged(address kernel);
+    event DistributorChanged(address distributor);
     event BorrowRatioUpdated(uint256 borrowRatio);
     event Staked(address indexed account, uint256 amount);
     event Unstaked(address indexed account, uint256 amount);
@@ -129,6 +148,7 @@ contract Leverager is
     error INVALID_UNSTAKE();
     error INVALID_CLAIM();
     error ERROR_BORROW_RATIO(uint256 borrowRatio);
+    error ERROR_FEE(uint256 fee);
 
     //============================================================================================//
     //                                         INITIALIZE                                         //
@@ -143,13 +163,18 @@ contract Leverager is
         Kernel _kernel,
         IDLPVault _dlpVault,
         IERC20 _asset,
+        IRewardDistributor _distributor,
+        uint256 _fee,
         uint256 _borrowRatio
     ) external initializer {
+        if (_fee >= MULTIPLIER) revert ERROR_FEE(_fee);
         if (_borrowRatio >= MULTIPLIER) revert ERROR_BORROW_RATIO(_borrowRatio);
 
         kernel = _kernel;
         dlpVault = _dlpVault;
         asset = _asset;
+        distributor = _distributor;
+        fee = _fee;
         borrowRatio = _borrowRatio;
 
         _asset.safeApprove(address(LENDING_POOL), type(uint256).max);
@@ -198,7 +223,7 @@ contract Leverager is
         external
         returns (Keycode[] memory dependencies)
     {
-        dependencies = new Keycode[](2);
+        dependencies = new Keycode[](1);
         dependencies[0] = toKeycode("ROLES");
         ROLES = ROLESv1(address(kernel.getModuleForKeycode(dependencies[0])));
     }
@@ -214,6 +239,14 @@ contract Leverager is
     //============================================================================================//
     //                                         ADMIN                                              //
     //============================================================================================//
+
+    function setRewardDistributor(
+        IRewardDistributor _distributor
+    ) external onlyAdmin {
+        distributor = _distributor;
+
+        emit DistributorChanged(address(_distributor));
+    }
 
     function recoverERC20(
         IERC20 _token,
@@ -244,7 +277,7 @@ contract Leverager is
      * @return varaiableDebtToken address of the asset
      *
      */
-    function getVDebtToken() public view returns (address) {
+    function getVDebtToken() public view override returns (address) {
         DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
             address(asset)
         );
@@ -256,7 +289,7 @@ contract Leverager is
      * @return varaiableDebtToken address of the asset
      *
      */
-    function getAToken() public view returns (address) {
+    function getAToken() public view override returns (address) {
         DataTypes.ReserveData memory reserveData = LENDING_POOL.getReserveData(
             address(asset)
         );
@@ -295,7 +328,7 @@ contract Leverager is
     //                                     REWARDS LOGIC                                          //
     //============================================================================================//
 
-    function _update() internal {
+    function _update(address _account) internal {
         if (totalSB == 0) return;
 
         // claim reward
@@ -315,6 +348,8 @@ contract Leverager is
                 }
             }
 
+            console2.log("------- Reward: ", reward);
+
             if (reward == 0) return;
 
             CHEF_INCENTIVES_CONTROLLER.claim(address(dlpVault), tokens);
@@ -322,12 +357,11 @@ contract Leverager is
 
         // update rate
         accTokenPerShare += (reward * PRECISION) / totalSB;
-    }
 
-    function _updatePending(address _account) internal {
+        // update pending
         Stake storage info = stakeInfo[_account];
 
-        info.pending = (accTokenPerShare * info.aTSB) / PRECISION - info.debt;
+        info.pending += (accTokenPerShare * info.aTSB) / PRECISION - info.debt;
     }
 
     function _updateDebt(address _account) internal {
@@ -359,15 +393,15 @@ contract Leverager is
         // flashloan for loop
         uint256 loanAmount = (amount * borrowRatio) /
             (MULTIPLIER - borrowRatio);
-        if (loanAmount == 0) return;
-
-        AAVE_LENDING_POOL.flashLoanSimple(
-            address(this),
-            address(asset),
-            loanAmount,
-            "",
-            0
-        );
+        if (loanAmount > 0) {
+            AAVE_LENDING_POOL.flashLoanSimple(
+                address(this),
+                address(asset),
+                loanAmount,
+                "",
+                0
+            );
+        }
 
         // stake info
         Stake storage info = stakeInfo[msg.sender];
@@ -407,6 +441,42 @@ contract Leverager is
         return true;
     }
 
+    function _unloop(uint256 amount) internal {
+        if (amount == 0) return;
+
+        IAToken aToken = IAToken(getAToken());
+        IVariableDebtToken debtToken = IVariableDebtToken(getVDebtToken());
+
+        uint256 aTSBBefore = aToken.scaledBalanceOf(address(dlpVault));
+        uint256 dTSBBefore = debtToken.scaledBalanceOf(address(dlpVault));
+
+        {
+            (uint256 aTokenAmount, uint256 debtTokenAmount) = staked(
+                msg.sender
+            );
+            uint256 repayAmount = debtTokenAmount.mulDiv(
+                amount,
+                aTokenAmount - debtTokenAmount,
+                Math.Rounding.Up
+            );
+
+            // flashloan for unloop
+            AAVE_LENDING_POOL.flashLoanSimple(
+                address(dlpVault),
+                address(asset),
+                repayAmount,
+                abi.encode(amount, msg.sender),
+                0
+            );
+        }
+
+        Stake storage info = stakeInfo[msg.sender];
+        info.aTSB -= aTSBBefore - aToken.scaledBalanceOf(address(dlpVault));
+        info.dTSB -= dTSBBefore - debtToken.scaledBalanceOf(address(dlpVault));
+
+        totalSB -= aTSBBefore - aToken.scaledBalanceOf(address(dlpVault));
+    }
+
     //============================================================================================//
     //                                         STAKE LOGIC                                        //
     //============================================================================================//
@@ -429,8 +499,7 @@ contract Leverager is
     function stake(uint256 _amount) external nonReentrant {
         if (_amount == 0) revert INVALID_AMOUNT();
 
-        _update();
-        _updatePending(msg.sender);
+        _update(msg.sender);
 
         asset.safeTransferFrom(msg.sender, address(this), _amount);
         _loop(_amount);
@@ -443,31 +512,23 @@ contract Leverager is
     function unstakeable(address _account) public view returns (uint256) {
         (uint256 aTokenAmount, uint256 debtTokenAmount) = staked(_account);
 
-        if (aTokenAmount > debtTokenAmount) return 0;
+        if (aTokenAmount < debtTokenAmount) return 0;
 
         return aTokenAmount - debtTokenAmount;
     }
 
     function unstake(uint256 _amount) external nonReentrant {
-        if (_amount == 0) revert INVALID_AMOUNT();
+        if (_amount == 0) {
+            _amount = unstakeable(msg.sender);
+        }
 
         uint256 unstakeableAmount = unstakeable(msg.sender);
         if (_amount > unstakeableAmount) revert INVALID_UNSTAKE();
 
-        Stake storage info = stakeInfo[msg.sender];
-        uint256 repayAmount = (info.dTSB * _amount) / unstakeableAmount;
+        _update(msg.sender);
 
-        // flashloan for unloop
-        AAVE_LENDING_POOL.flashLoanSimple(
-            address(dlpVault),
-            address(asset),
-            repayAmount,
-            abi.encode(_amount, msg.sender),
-            0
-        );
+        _unloop(_amount);
 
-        info.aTSB -= _amount + repayAmount;
-        info.dTSB -= repayAmount;
         _updateDebt(msg.sender);
 
         emit Unstaked(msg.sender, _amount);
@@ -475,7 +536,13 @@ contract Leverager is
 
     function claimable(
         address _account
-    ) external view returns (uint256 pending, uint256 expireAt) {
+    )
+        external
+        view
+        returns (uint256 amount, uint256 feeAmount, uint256 expireAt)
+    {
+        if (totalSB == 0) return (0, 0, 0);
+
         uint256 reward;
         {
             address[] memory tokens = new address[](2);
@@ -497,18 +564,18 @@ contract Leverager is
             (reward * PRECISION) /
             totalSB;
         Stake memory info = stakeInfo[_account];
-
-        pending =
-            info.pending +
+        uint256 pending = info.pending +
             (_accTokenPerShare * info.aTSB) /
             PRECISION -
             info.debt;
+
+        feeAmount = (pending * fee) / MULTIPLIER;
+        amount = pending - feeAmount;
         expireAt = block.timestamp + MFD.vestDuration();
     }
 
     function claim() external nonReentrant {
-        _update();
-        _updatePending(msg.sender);
+        _update(msg.sender);
         _updateDebt(msg.sender);
 
         Stake storage info = stakeInfo[msg.sender];
@@ -521,7 +588,8 @@ contract Leverager is
             uint32 expireAt = uint32(block.timestamp + MFD.vestDuration());
 
             Claim storage _info = claimInfo[index];
-            _info.amount = pending;
+            _info.feeAmount = (pending * fee) / MULTIPLIER;
+            _info.amount = pending - _info.feeAmount;
             _info.receiver = msg.sender;
             _info.expireAt = expireAt;
 
@@ -557,7 +625,14 @@ contract Leverager is
         ) revert INVALID_CLAIM();
 
         info.isClaimed = true;
+
+        // reward
         dlpVault.withdrawForLeverager(info.receiver, info.amount);
+
+        // fee
+        dlpVault.withdrawForLeverager(address(this), info.feeAmount);
+        RDNT.safeApprove(address(distributor), info.feeAmount);
+        distributor.receiveReward(address(RDNT), info.feeAmount);
 
         emit ClaimedVested(info.receiver, _index, info.amount);
     }

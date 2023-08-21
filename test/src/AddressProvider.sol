@@ -41,8 +41,15 @@ contract AddressProvider {
     address public constant rWETH_HOLDER =
         0xBf891E7eFCC98A8239385D3172bA10AD593c7886;
 
+    address public constant rARB = 0x2dADe5b7df9DA3a7e1c9748d169Cd6dFf77e3d01;
+    uint24 public constant ARB_POOL_FEE = 500;
+
+    address public constant rwstETH =
+        0x42C248D137512907048021B30d9dA17f48B5b7B2;
+    uint24 public constant WSTETH_POOL_FEE = 100;
+
     address public constant RDNT = 0x3082CC23568eA640225c2467653dB90e9250AaA0;
     address public constant DLP = 0x32dF62dc3aEd2cD6224193052Ce665DC18165841;
     address public constant DLP_HOLDER =
-        0x416051afD4cf1B60D56418055a87435217c5A4D5;
+        0x76ba3eC5f5adBf1C58c91e86502232317EeA72dE;
 }

@@ -9,6 +9,7 @@ import {Kernel, Keycode, Permissions, toKeycode, Policy} from "../Kernel.sol";
 import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
 
 import {IDLPVault} from "../interfaces/radiate/IDLPVault.sol";
+import {ILeverager} from "../interfaces/radiate/ILeverager.sol";
 import {IAToken} from "../interfaces/radiant-interfaces/IAToken.sol";
 import {IMultiFeeDistribution, LockedBalance} from "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
 import {ILendingPool} from "../interfaces/radiant-interfaces/ILendingPool.sol";
@@ -479,6 +480,10 @@ contract DLPVault is
     //                                    LEVERAGER LOGIC                                         //
     //============================================================================================//
 
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
     function executeOperation(
         address _asset,
         uint256 amount,
@@ -517,15 +522,24 @@ contract DLPVault is
         uint256 interestRateMode = 2; // variable
         LENDING_POOL.repay(_asset, amount, interestRateMode, address(this));
 
+        // repay flashloan
+        LENDING_POOL.withdraw(_asset, amount + premium, address(this));
+
         // withdraw
         (uint256 withdrawAmount, address account) = abi.decode(
             params,
             (uint256, address)
         );
-        LENDING_POOL.withdraw(_asset, withdrawAmount - premium, account);
-
-        // repay flashloan
-        LENDING_POOL.withdraw(_asset, amount + premium, address(this));
+        LENDING_POOL.withdraw(
+            _asset,
+            _min(
+                withdrawAmount - premium,
+                IERC20(ILeverager(initiator).getAToken()).balanceOf(
+                    address(this)
+                )
+            ),
+            account
+        );
 
         return true;
     }

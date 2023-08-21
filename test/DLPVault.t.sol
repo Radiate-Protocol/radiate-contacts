@@ -29,6 +29,7 @@ contract DLPVaultTest is Test, AddressProvider {
     RolesAdmin public admin;
     Treasury public treasury;
     DLPVault_Test public dlpVault;
+
     ILendingPool public lendingPool;
     IMultiFeeDistribution public mfd;
 
@@ -77,6 +78,7 @@ contract DLPVaultTest is Test, AddressProvider {
         }
         {
             dlpVault.setFee(depositFee, withdrawFee, compoundFee);
+            dlpVault.setVaultCap(vaultCap);
         }
         {
             address[] memory rewardBaseTokens = new address[](5);
@@ -101,9 +103,6 @@ contract DLPVaultTest is Test, AddressProvider {
             poolFees[4] = 0;
 
             dlpVault.addRewardBaseTokens(rewardBaseTokens, isATokens, poolFees);
-        }
-        {
-            dlpVault.setVaultCap(vaultCap);
         }
 
         // User
