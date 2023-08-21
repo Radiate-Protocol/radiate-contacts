@@ -7,14 +7,21 @@ import "forge-std/StdJson.sol";
 import "lib/openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
 import "lib/openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-import "../src/policies/DLPVault.sol";
+import "../src/policies/DLPVault_Audit.sol";
+import "../test/src/AddressProvider.sol";
 
 // forge script DeployDLPVault --rpc-url $ARBITRUM_RPC_URL --broadcast --verify -slow -vv
 // forge script DeployDLPVault --rpc-url $ARBITRUM_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --skip-simulation --slow -vvvv
-contract DeployDLPVault is Script {
+contract DeployDLPVault is Script, AddressProvider {
     // Deploy config
     address constant proxyAdmin = 0xEA871D39057E94691FA7323042CC015601eA4AF2;
     address constant kernel = 0xD85317aA40c4258318Dc7EdE5491B38e92F41ddb;
+
+    // DLP vault config
+    uint256 public depositFee = 0;
+    uint256 public withdrawFee = 0;
+    uint256 public compoundFee = 300;
+    uint256 public vaultCap = 100000 ether;
 
     function run() public {
         console2.log("Broadcast sender", msg.sender);
@@ -25,11 +32,48 @@ contract DeployDLPVault is Script {
         address impl = address(new DLPVault());
         address proxy = address(
             new TransparentUpgradeableProxy(
-            impl,
-            proxyAdmin,
-            abi.encodeWithSignature("initialize(address)", kernel)
+                impl,
+                proxyAdmin,
+                abi.encodeWithSignature("initialize(address)", kernel)
             )
         );
+
+        {
+            DLPVault dlpVault = DLPVault(payable(proxy));
+
+            dlpVault.configureDependencies();
+            dlpVault.setFee(depositFee, withdrawFee, compoundFee);
+            dlpVault.setVaultCap(vaultCap);
+
+            address[] memory rewardBaseTokens = new address[](7);
+            rewardBaseTokens[0] = rWBTC;
+            rewardBaseTokens[1] = rUSDT;
+            rewardBaseTokens[2] = rUSDC;
+            rewardBaseTokens[3] = rDAI;
+            rewardBaseTokens[4] = rARB;
+            rewardBaseTokens[5] = rwstETH;
+            rewardBaseTokens[6] = rWETH;
+
+            bool[] memory isATokens = new bool[](7);
+            isATokens[0] = true;
+            isATokens[1] = true;
+            isATokens[2] = true;
+            isATokens[3] = true;
+            isATokens[4] = true;
+            isATokens[5] = true;
+            isATokens[6] = true;
+
+            uint24[] memory poolFees = new uint24[](7);
+            poolFees[0] = WBTC_POOL_FEE;
+            poolFees[1] = USDT_POOL_FEE;
+            poolFees[2] = USDC_POOL_FEE;
+            poolFees[3] = DAI_POOL_FEE;
+            poolFees[4] = ARB_POOL_FEE;
+            poolFees[5] = WSTETH_POOL_FEE;
+            poolFees[6] = 0;
+
+            dlpVault.addRewardBaseTokens(rewardBaseTokens, isATokens, poolFees);
+        }
 
         vm.stopBroadcast();
 

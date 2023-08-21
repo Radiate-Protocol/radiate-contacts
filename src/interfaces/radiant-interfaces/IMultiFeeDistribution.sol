@@ -18,6 +18,8 @@ interface IMultiFeeDistribution is IFeeDistribution {
 
     function rdntToken() external view returns (IMintableToken);
 
+    function vestDuration() external view returns (uint256);
+
     function getPriceProvider() external view returns (address);
 
     function lockInfo(
@@ -65,6 +67,8 @@ interface IMultiFeeDistribution is IFeeDistribution {
     function relock() external;
 
     function setRelock(bool _status) external;
+
+    function bountyManager() external view returns (address);
 }
 
 interface IMFDPlus is IMultiFeeDistribution {
