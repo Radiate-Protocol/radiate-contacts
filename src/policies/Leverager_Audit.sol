@@ -477,6 +477,15 @@ contract Leverager is
     //                                         STAKE LOGIC                                        //
     //============================================================================================//
 
+    function totalAssets()
+        external
+        view
+        returns (uint256 aTokenAmount, uint256 debtTokenAmount)
+    {
+        aTokenAmount = IERC20(getAToken()).balanceOf(address(dlpVault));
+        debtTokenAmount = IERC20(getVDebtToken()).balanceOf(address(dlpVault));
+    }
+
     function staked(
         address _account
     ) public view returns (uint256 aTokenAmount, uint256 debtTokenAmount) {
