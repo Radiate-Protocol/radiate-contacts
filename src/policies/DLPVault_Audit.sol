@@ -378,9 +378,9 @@ contract DLPVault is
     }
 
     function boostDLP(uint256 _amount) external onlyAdmin {
-        DLP.safeTransferFrom(msg.sender, address(this), _amount);
-
         boostedDLP += _amount;
+
+        DLP.safeTransferFrom(msg.sender, address(this), _amount);
 
         _stakeTokens(_amount);
     }
@@ -427,9 +427,9 @@ contract DLPVault is
         RewardInfo storage reward = rewards[_index];
         uint256 feeAmount = (_harvested * fee.compoundFee) / MULTIPLIER;
 
-        IERC20(reward.token).safeTransfer(treasury, feeAmount);
-
         reward.pending -= feeAmount;
+
+        IERC20(reward.token).safeTransfer(treasury, feeAmount);
     }
 
     function _sendDepositFee(uint256 _assets) internal returns (uint256) {
