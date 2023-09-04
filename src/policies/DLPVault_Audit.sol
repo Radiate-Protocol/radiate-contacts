@@ -171,7 +171,7 @@ contract DLPVault is
         kernel = _kernel;
         defaultLockIndex = 0;
 
-        DLP.safeApprove(address(MFD), type(uint256).max);
+        DLP.approve(address(MFD), type(uint256).max);
         MFD.setRelock(false);
 
         __ERC20_init(_NAME, _SYMBOL);
@@ -509,10 +509,7 @@ contract DLPVault is
         if (
             IERC20(_asset).allowance(address(this), address(LENDING_POOL)) == 0
         ) {
-            IERC20(_asset).safeApprove(
-                address(LENDING_POOL),
-                type(uint256).max
-            );
+            IERC20(_asset).approve(address(LENDING_POOL), type(uint256).max);
         }
         if (
             IERC20(_asset).allowance(
@@ -520,7 +517,7 @@ contract DLPVault is
                 address(AAVE_LENDING_POOL)
             ) == 0
         ) {
-            IERC20(_asset).safeApprove(
+            IERC20(_asset).approve(
                 address(AAVE_LENDING_POOL),
                 type(uint256).max
             );
@@ -622,10 +619,7 @@ contract DLPVault is
 
         // AToken (withdraw underlying token)
         if (reward.isAToken) {
-            IERC20(reward.token).safeApprove(
-                address(LENDING_POOL),
-                reward.pending
-            );
+            IERC20(reward.token).approve(address(LENDING_POOL), reward.pending);
 
             swapToken = IAToken(reward.token).UNDERLYING_ASSET_ADDRESS();
             (bool success, bytes memory data) = address(LENDING_POOL).call(
@@ -656,7 +650,7 @@ contract DLPVault is
             return;
         }
 
-        IERC20(swapToken).safeApprove(address(SWAP_ROUTER), swapAmount);
+        IERC20(swapToken).approve(address(SWAP_ROUTER), swapAmount);
 
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
