@@ -158,6 +158,7 @@ contract DLPVault is
     error NOT_CLAIMABLE();
     error ALREADY_CALIMED();
     error LIMITED_WITHDRAW();
+    error ZERO_ADDRESS();
 
     //============================================================================================//
     //                                         INITIALIZE                                         //
@@ -840,6 +841,8 @@ contract DLPVault is
         uint256 _assets,
         uint256 _shares
     ) internal virtual override {
+        if (_receiver == address(0)) revert ZERO_ADDRESS();
+
         EnumerableSet.UintSet storage withdrawals = _userWithdrawals[_caller];
         if (withdrawals.length() >= MAX_QUEUE_PER_WALLET)
             revert LIMITED_WITHDRAW();
