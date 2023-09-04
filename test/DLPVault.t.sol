@@ -102,7 +102,19 @@ contract DLPVaultTest is Test, AddressProvider {
             poolFees[3] = DAI_POOL_FEE;
             poolFees[4] = 0;
 
-            dlpVault.addRewardBaseTokens(rewardBaseTokens, isATokens, poolFees);
+            uint256[] memory swapThresholds = new uint256[](5);
+            swapThresholds[0] = WBTC_SWAP_THRESHOLD;
+            swapThresholds[1] = USDT_SWAP_THRESHOLD;
+            swapThresholds[2] = USDC_SWAP_THRESHOLD;
+            swapThresholds[3] = DAI_SWAP_THRESHOLD;
+            swapThresholds[4] = WETH_SWAP_THRESHOLD;
+
+            dlpVault.addRewardBaseTokens(
+                rewardBaseTokens,
+                isATokens,
+                poolFees,
+                swapThresholds
+            );
         }
 
         // User

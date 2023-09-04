@@ -96,8 +96,15 @@ contract LeveragerTest is Test, AddressProvider {
             isATokens[0] = true;
             uint24[] memory poolFees = new uint24[](1);
             poolFees[0] = USDC_POOL_FEE;
+            uint256[] memory swapThresholds = new uint256[](1);
+            swapThresholds[0] = USDC_SWAP_THRESHOLD;
 
-            dlpVault.addRewardBaseTokens(rewardBaseTokens, isATokens, poolFees);
+            dlpVault.addRewardBaseTokens(
+                rewardBaseTokens,
+                isATokens,
+                poolFees,
+                swapThresholds
+            );
         }
         {
             lendingPool = ILendingPool(dlpVault.LENDING_POOL());

@@ -72,7 +72,21 @@ contract DeployDLPVault is Script, AddressProvider {
             poolFees[5] = WSTETH_POOL_FEE;
             poolFees[6] = 0;
 
-            dlpVault.addRewardBaseTokens(rewardBaseTokens, isATokens, poolFees);
+            uint256[] memory swapThresholds = new uint256[](7);
+            swapThresholds[0] = WBTC_SWAP_THRESHOLD;
+            swapThresholds[1] = USDT_SWAP_THRESHOLD;
+            swapThresholds[2] = USDC_SWAP_THRESHOLD;
+            swapThresholds[3] = DAI_SWAP_THRESHOLD;
+            swapThresholds[4] = ARB_SWAP_THRESHOLD;
+            swapThresholds[5] = WSTETH_SWAP_THRESHOLD;
+            swapThresholds[6] = WETH_SWAP_THRESHOLD;
+
+            dlpVault.addRewardBaseTokens(
+                rewardBaseTokens,
+                isATokens,
+                poolFees,
+                swapThresholds
+            );
         }
 
         vm.stopBroadcast();

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC4626Upgradeable, IERC20Upgradeable} from "@openzeppelin-upgradeable/contracts/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -84,6 +84,7 @@ contract DLPVault is
         address token;
         bool isAToken;
         uint24 poolFee; // UniswapV3 pool fee
+        uint256 swapThreshold;
         uint256 pending;
     }
     RewardInfo[] public rewards;
@@ -274,11 +275,13 @@ contract DLPVault is
     function addRewardBaseTokens(
         address[] calldata _rewardBaseTokens,
         bool[] calldata _isATokens,
-        uint24[] calldata _poolFees
+        uint24[] calldata _poolFees,
+        uint256[] calldata _swapThresholds
     ) external onlyAdmin {
         uint256 length = _rewardBaseTokens.length;
         if (length != _isATokens.length) revert INVALID_PARAM();
         if (length != _poolFees.length) revert INVALID_PARAM();
+        if (length != _swapThresholds.length) revert INVALID_PARAM();
 
         for (uint256 i = 0; i < length; ) {
             rewards.push(
@@ -286,6 +289,7 @@ contract DLPVault is
                     token: _rewardBaseTokens[i],
                     isAToken: _isATokens[i],
                     poolFee: _poolFees[i],
+                    swapThreshold: _swapThresholds[i],
                     pending: 0
                 })
             );
@@ -609,10 +613,7 @@ contract DLPVault is
         RewardInfo storage reward = rewards[_index];
 
         // Threshold
-        if (
-            reward.pending <
-            (10 ** (IERC20Metadata(reward.token).decimals() - 2))
-        ) return;
+        if (reward.pending < reward.swapThreshold) return;
 
         address swapToken;
         uint256 swapAmount;
