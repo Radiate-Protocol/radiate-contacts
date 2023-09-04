@@ -355,16 +355,25 @@ contract DLPVault is
         emit CreditDelegationDisabled(address(_token), _leverager);
     }
 
-    function withdrawTokens(IERC20 _token) external onlyAdmin {
-        uint256 amount = _token.balanceOf(address(this));
+    function withdrawTokens(address _token) external onlyAdmin {
+        if (_token == address(0)) {
+            (bool success, ) = msg.sender.call{value: address(this).balance}(
+                ""
+            );
+            require(success);
+            return;
+        }
 
-        if (_token == DLP) {
+        IERC20 token = IERC20(_token);
+        uint256 amount = token.balanceOf(address(this));
+
+        if (token == DLP) {
             processWithdrawalQueue();
             amount -= claimableDLP;
         }
 
         if (amount > 0) {
-            _token.safeTransfer(msg.sender, amount);
+            token.safeTransfer(msg.sender, amount);
         }
     }
 
