@@ -167,6 +167,7 @@ contract DLPVault is
         defaultLockIndex = 0;
 
         DLP.safeApprove(address(MFD), type(uint256).max);
+        MFD.setRelock(false);
 
         __ERC20_init(_NAME, _SYMBOL);
         __ERC4626_init(IERC20Upgradeable(address(DLP)));
