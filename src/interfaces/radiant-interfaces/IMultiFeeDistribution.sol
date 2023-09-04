@@ -62,6 +62,8 @@ interface IMultiFeeDistribution is IFeeDistribution {
 
     function withdraw(uint256 amount) external;
 
+    function getReward(address[] memory _rewardTokens) external;
+
     function getAllRewards() external;
 
     function relock() external;

@@ -389,7 +389,7 @@ contract DLPVault is
         _userWithdrawals[msg.sender].add(index);
     }
 
-    function getRewardBaseTokens() external view returns (address[] memory) {
+    function getRewardBaseTokens() public view returns (address[] memory) {
         uint256 length = rewards.length;
         address[] memory rewardBaseTokens = new address[](length);
 
@@ -581,7 +581,7 @@ contract DLPVault is
         }
 
         // get reward
-        MFD.getAllRewards();
+        MFD.getReward(getRewardBaseTokens());
 
         // reward harvested
         for (uint256 i = 0; i < length; ) {
