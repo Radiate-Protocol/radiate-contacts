@@ -786,7 +786,10 @@ contract DLPVault is
     ) public virtual override returns (uint256) {
         compound();
 
-        _assets = _sendWithdrawFee(_assets, _owner);
+        if (msg.sender != treasury) {
+            _assets = _sendWithdrawFee(_assets, _owner);
+        }
+
         if (_assets > maxWithdraw(_owner)) revert EXCEED_MAX_WITHDRAW();
 
         uint256 shares = super.previewWithdraw(_assets);
@@ -802,7 +805,10 @@ contract DLPVault is
     ) public virtual override returns (uint256) {
         compound();
 
-        _shares = _sendRedeemFee(_shares, _owner);
+        if (msg.sender != treasury) {
+            _shares = _sendRedeemFee(_shares, _owner);
+        }
+
         if (_shares > maxRedeem(_owner)) revert EXCEED_MAX_REDEEM();
 
         uint256 assets = super.previewRedeem(_shares);
