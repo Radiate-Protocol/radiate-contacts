@@ -628,11 +628,20 @@ contract DLPVault is
             );
 
             swapToken = IAToken(reward.token).UNDERLYING_ASSET_ADDRESS();
-            swapAmount = LENDING_POOL.withdraw(
-                swapToken,
-                reward.pending,
-                address(this)
+            (bool success, bytes memory data) = address(LENDING_POOL).call(
+                abi.encodeWithSignature(
+                    "withdraw(address,uint256,address)",
+                    swapToken,
+                    reward.pending,
+                    address(this)
+                )
             );
+
+            if (success) {
+                swapAmount = abi.decode(data, (uint256));
+            } else {
+                return;
+            }
         }
         // ERC20
         else {
