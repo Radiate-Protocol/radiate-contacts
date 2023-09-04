@@ -354,7 +354,7 @@ contract DLPVault is
         uint256 amount = _token.balanceOf(address(this));
 
         if (_token == DLP) {
-            _processWithdrawalQueue();
+            processWithdrawalQueue();
             amount -= claimableDLP;
         }
 
@@ -601,11 +601,8 @@ contract DLPVault is
         // add liquidity
         _joinPool();
 
-        // withdraw expired lock
-        MFD.withdrawExpiredLocksForWithOptions(address(this), 0, true);
-
         // process withdrawal queue
-        _processWithdrawalQueue();
+        processWithdrawalQueue();
 
         // stake
         _stakeDLP();
@@ -711,7 +708,10 @@ contract DLPVault is
         MFD.stake(_amount, address(this), defaultLockIndex);
     }
 
-    function _processWithdrawalQueue() internal {
+    function processWithdrawalQueue() public {
+        // withdraw expired lock
+        MFD.withdrawExpiredLocksForWithOptions(address(this), 0, true);
+
         uint256 balance = DLP.balanceOf(address(this)) - claimableDLP;
         uint256 length = withdrawalQueues.length;
 
