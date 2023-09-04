@@ -12,7 +12,7 @@ import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
 import {IDLPVault} from "../interfaces/radiate/IDLPVault.sol";
 import {ILeverager} from "../interfaces/radiate/ILeverager.sol";
 import {IAToken} from "../interfaces/radiant-interfaces/IAToken.sol";
-import {IMultiFeeDistribution, LockedBalance} from "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
+import {IMultiFeeDistribution} from "../interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
 import {ILendingPool} from "../interfaces/radiant-interfaces/ILendingPool.sol";
 import {ICreditDelegationToken} from "../interfaces/radiant-interfaces/ICreditDelegationToken.sol";
 import {IBountyManager} from "../interfaces/radiant-interfaces/IBountyManager.sol";
