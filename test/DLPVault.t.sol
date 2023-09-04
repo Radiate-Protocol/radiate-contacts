@@ -381,15 +381,17 @@ contract DLPVaultTest is Test, AddressProvider {
             assertEq(dlpVault.claimableDLP(), 0);
 
             (
+                address caller,
                 uint256 assets_,
                 address receiver,
-                bool isClaimed,
                 uint32 createdAt
             ) = dlpVault.withdrawalQueues(0);
+            assertEq(caller, alice);
             assertEq(assets_, assets);
             assertEq(receiver, carol);
-            assertEq(isClaimed, false);
             assertEq(createdAt, uint32(block.timestamp));
+
+            assertEq(dlpVault.withdrawalsOf(alice).length, 1);
         }
     }
 
@@ -420,15 +422,17 @@ contract DLPVaultTest is Test, AddressProvider {
             assertEq(dlpVault.claimableDLP(), 0);
 
             (
+                address caller,
                 uint256 assets_,
                 address receiver,
-                bool isClaimed,
                 uint32 createdAt
             ) = dlpVault.withdrawalQueues(0);
+            assertEq(caller, alice);
             assertEq(assets_, assetsExceptFee);
             assertEq(receiver, alice);
-            assertEq(isClaimed, false);
             assertEq(createdAt, uint32(block.timestamp));
+
+            assertEq(dlpVault.withdrawalsOf(alice).length, 1);
         }
     }
 
@@ -450,13 +454,15 @@ contract DLPVaultTest is Test, AddressProvider {
             console2.log("Before Total Assets: ", dlpVault.totalAssets());
             console2.log("Before Carol's DLP: ", ERC20(DLP).balanceOf(carol));
 
-            (uint256 assets, address receiver, bool isClaimed, ) = dlpVault
+            (address caller, uint256 assets, address receiver, ) = dlpVault
                 .withdrawalQueues(0);
+            assertEq(caller, alice);
             assertEq(receiver, carol);
             assertEq(ERC20(DLP).balanceOf(carol), 0);
-            assertEq(isClaimed, false);
             assertEq(dlpVault.queuedDLP(), assets);
             assertEq(dlpVault.claimableDLP(), assets);
+
+            assertEq(dlpVault.withdrawalsOf(alice).length, 1);
         }
         {
             assertEq(dlpVault.withdrawalQueueIndex(), 1);
@@ -472,13 +478,15 @@ contract DLPVaultTest is Test, AddressProvider {
             console2.log("After Total Assets: ", dlpVault.totalAssets());
             console2.log("After Carol's DLP: ", ERC20(DLP).balanceOf(carol));
 
-            (uint256 assets, address receiver, bool isClaimed, ) = dlpVault
+            (address caller, uint256 assets, address receiver, ) = dlpVault
                 .withdrawalQueues(0);
+            assertEq(caller, alice);
             assertEq(receiver, carol);
             assertEq(assets, ERC20(DLP).balanceOf(carol));
-            assertEq(isClaimed, true);
             assertEq(dlpVault.queuedDLP(), 0);
             assertEq(dlpVault.claimableDLP(), 0);
+
+            assertEq(dlpVault.withdrawalsOf(alice).length, 0);
         }
     }
 }

@@ -4,6 +4,7 @@ pragma solidity 0.8.15;
 import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC4626Upgradeable, IERC20Upgradeable} from "@openzeppelin-upgradeable/contracts/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {Kernel, Keycode, Permissions, toKeycode, Policy} from "../Kernel.sol";
 import {RolesConsumer, ROLESv1} from "../modules/ROLES/OlympusRoles.sol";
@@ -27,6 +28,7 @@ contract DLPVault is
     IDLPVault
 {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     //============================================================================================//
     //                                         CONSTANT                                           //
@@ -55,6 +57,7 @@ contract DLPVault is
         0x32df62dc3aed2cd6224193052ce665dc181658410002000000000000000003bd;
 
     uint256 public constant MAX_QUEUE_PROCESS_LIMIT = 30;
+    uint256 public constant MAX_QUEUE_PER_WALLET = 5;
     uint256 public constant MULTIPLIER = 1e6; // 100%
 
     //============================================================================================//
@@ -95,15 +98,16 @@ contract DLPVault is
 
     /// @notice withdrawal queue
     struct WithdrawalQueue {
+        address caller;
         uint256 assets;
         address receiver;
-        bool isClaimed;
         uint32 createdAt;
     }
     WithdrawalQueue[] public withdrawalQueues;
     uint256 public withdrawalQueueIndex;
     uint256 public queuedDLP;
     uint256 public claimableDLP;
+    mapping(address => EnumerableSet.UintSet) private _userWithdrawals;
 
     //============================================================================================//
     //                                           EVENT                                            //
@@ -152,6 +156,7 @@ contract DLPVault is
     error EXCEED_MAX_REDEEM();
     error NOT_CLAIMABLE();
     error ALREADY_CALIMED();
+    error LIMITED_WITHDRAW();
 
     //============================================================================================//
     //                                         INITIALIZE                                         //
@@ -372,14 +377,16 @@ contract DLPVault is
         boostedDLP -= _amount;
         queuedDLP += _amount;
 
+        uint256 index = withdrawalQueues.length;
         withdrawalQueues.push(
             WithdrawalQueue({
+                caller: msg.sender,
                 assets: _amount,
                 receiver: msg.sender,
-                isClaimed: false,
                 createdAt: uint32(block.timestamp)
             })
         );
+        _userWithdrawals[msg.sender].add(index);
     }
 
     function getRewardBaseTokens() external view returns (address[] memory) {
@@ -805,9 +812,9 @@ contract DLPVault is
         if (_index >= withdrawalQueueIndex) revert NOT_CLAIMABLE();
 
         WithdrawalQueue storage queue = withdrawalQueues[_index];
-        if (queue.isClaimed) revert ALREADY_CALIMED();
+        if (!_userWithdrawals[queue.caller].remove(_index))
+            revert ALREADY_CALIMED();
 
-        queue.isClaimed = true;
         queuedDLP -= queue.assets;
         claimableDLP -= queue.assets;
 
@@ -823,6 +830,10 @@ contract DLPVault is
         uint256 _assets,
         uint256 _shares
     ) internal virtual override {
+        EnumerableSet.UintSet storage withdrawals = _userWithdrawals[_caller];
+        if (withdrawals.length() >= MAX_QUEUE_PER_WALLET)
+            revert LIMITED_WITHDRAW();
+
         if (_caller != _owner) {
             super._spendAllowance(_owner, _caller, _shares);
         }
@@ -834,12 +845,13 @@ contract DLPVault is
         uint256 index = withdrawalQueues.length;
         withdrawalQueues.push(
             WithdrawalQueue({
+                caller: _caller,
                 assets: _assets,
                 receiver: _receiver,
-                isClaimed: false,
                 createdAt: uint32(block.timestamp)
             })
         );
+        withdrawals.add(index);
 
         emit WithdrawQueued(
             index,
@@ -855,5 +867,21 @@ contract DLPVault is
         return
             (MFD.totalBalance(address(this)) + DLP.balanceOf(address(this))) -
             (queuedDLP + boostedDLP);
+    }
+
+    function withdrawalsOf(
+        address _account
+    ) external view returns (WithdrawalQueue[] memory queues) {
+        EnumerableSet.UintSet storage withdrawals = _userWithdrawals[_account];
+        uint256 length = withdrawals.length();
+
+        queues = new WithdrawalQueue[](length);
+
+        for (uint256 i = 0; i < length; ) {
+            queues[i] = withdrawalQueues[withdrawals.at(i)];
+            unchecked {
+                ++i;
+            }
+        }
     }
 }
