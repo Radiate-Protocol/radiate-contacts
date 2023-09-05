@@ -421,15 +421,20 @@ contract DLPVault is
     //                                       FEE LOGIC                                            //
     //============================================================================================//
 
-    function _sendCompoundFee(uint256 _index, uint256 _harvested) internal {
-        if (fee.compoundFee == 0) return;
-
-        RewardInfo storage reward = rewards[_index];
+    function _sendCompoundFee(
+        RewardInfo storage _reward,
+        uint256 _harvested
+    ) internal {
         uint256 feeAmount = (_harvested * fee.compoundFee) / MULTIPLIER;
 
-        reward.pending -= feeAmount;
+        if (feeAmount > 0) {
+            // feeAmount < harvested < reward.pending
+            unchecked {
+                _reward.pending -= feeAmount;
+            }
 
-        IERC20(reward.token).safeTransfer(treasury, feeAmount);
+            IERC20(_reward.token).safeTransfer(treasury, feeAmount);
+        }
     }
 
     function _sendDepositFee(uint256 _assets) internal returns (uint256) {
@@ -600,9 +605,15 @@ contract DLPVault is
             uint256 harvested = IERC20(reward.token).balanceOf(address(this)) -
                 balanceBefore[i];
 
-            reward.pending += harvested;
-            _sendCompoundFee(i, harvested);
-            _swapToWETH(i);
+            if (harvested > 0) {
+                // always less than reward token's totalSupply
+                unchecked {
+                    reward.pending += harvested;
+                }
+
+                _sendCompoundFee(reward, harvested);
+                _swapToWETH(reward);
+            }
 
             unchecked {
                 ++i;
@@ -619,25 +630,26 @@ contract DLPVault is
         _stakeDLP();
     }
 
-    function _swapToWETH(uint256 _index) internal {
-        RewardInfo storage reward = rewards[_index];
-
+    function _swapToWETH(RewardInfo storage _reward) internal {
         // Threshold
-        if (reward.pending < reward.swapThreshold) return;
+        if (_reward.pending < _reward.swapThreshold) return;
 
         address swapToken;
         uint256 swapAmount;
 
         // AToken (withdraw underlying token)
-        if (reward.isAToken) {
-            IERC20(reward.token).approve(address(LENDING_POOL), reward.pending);
+        if (_reward.isAToken) {
+            IERC20(_reward.token).approve(
+                address(LENDING_POOL),
+                _reward.pending
+            );
 
-            swapToken = IAToken(reward.token).UNDERLYING_ASSET_ADDRESS();
+            swapToken = IAToken(_reward.token).UNDERLYING_ASSET_ADDRESS();
             (bool success, bytes memory data) = address(LENDING_POOL).call(
                 abi.encodeWithSignature(
                     "withdraw(address,uint256,address)",
                     swapToken,
-                    reward.pending,
+                    _reward.pending,
                     address(this)
                 )
             );
@@ -650,11 +662,11 @@ contract DLPVault is
         }
         // ERC20
         else {
-            swapToken = reward.token;
-            swapAmount = reward.pending;
+            swapToken = _reward.token;
+            swapAmount = _reward.pending;
         }
 
-        reward.pending = 0;
+        _reward.pending = 0;
 
         // UniswapV3 Swap (REWARD -> WETH)
         if (swapToken == address(WETH)) {
@@ -667,7 +679,7 @@ contract DLPVault is
             .ExactInputSingleParams({
                 tokenIn: swapToken,
                 tokenOut: address(WETH),
-                fee: reward.poolFee,
+                fee: _reward.poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: swapAmount,

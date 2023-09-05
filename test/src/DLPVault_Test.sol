@@ -12,7 +12,7 @@ contract DLPVault_Test is DLPVault {
             uint256 harvested = IERC20(reward.token).balanceOf(address(this));
             reward.pending = harvested;
 
-            _swapToWETH(i);
+            _swapToWETH(reward);
 
             unchecked {
                 ++i;
