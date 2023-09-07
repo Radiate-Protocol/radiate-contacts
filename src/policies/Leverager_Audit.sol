@@ -87,11 +87,17 @@ contract Leverager is
     /// @notice Borrow ratio
     uint256 public borrowRatio;
 
-    /// @notice Acc token per share
-    uint256 public accTokenPerShare;
+    /// @notice Acc token per share for aToken
+    uint256 public aAccTokenPerShare;
+
+    /// @notice Acc token per share for debtToken
+    uint256 public dAccTokenPerShare;
 
     /// @notice Total scaled balance of aToken
-    uint256 public totalSB;
+    uint256 public aTotalSB;
+
+    /// @notice Total scaled balance of debtToken
+    uint256 public dTotalSB;
 
     /// @notice Stake info
     struct Stake {
@@ -327,43 +333,53 @@ contract Leverager is
     //============================================================================================//
 
     function _update(address _account) internal {
-        if (totalSB == 0) return;
+        address[] memory tokens = new address[](1);
 
-        // claim reward
-        uint256 reward;
-        {
-            address[] memory tokens = new address[](2);
+        // claim reward for aToken
+        if (aTotalSB > 0) {
             tokens[0] = getAToken();
-            tokens[1] = getVDebtToken();
-            uint256[] memory rewards = CHEF_INCENTIVES_CONTROLLER
-                .pendingRewards(address(dlpVault), tokens);
-            uint256 length = rewards.length;
-
-            for (uint256 i = 0; i < length; ) {
-                unchecked {
-                    reward += rewards[i];
-                    ++i;
-                }
-            }
-
-            if (reward == 0) return;
+            (uint256 balanceBefore, , ) = MFD.earnedBalances(address(dlpVault));
 
             CHEF_INCENTIVES_CONTROLLER.claim(address(dlpVault), tokens);
+
+            (uint256 balanceAfter, , ) = MFD.earnedBalances(address(dlpVault));
+            uint256 reward = balanceAfter - balanceBefore;
+            // update rate
+            if (reward > 0) {
+                aAccTokenPerShare += (reward * PRECISION) / aTotalSB;
+            }
         }
 
-        // update rate
-        accTokenPerShare += (reward * PRECISION) / totalSB;
+        // claim reward for debtToken
+        if (dTotalSB > 0) {
+            tokens[0] = getVDebtToken();
+            (uint256 balanceBefore, , ) = MFD.earnedBalances(address(dlpVault));
+
+            CHEF_INCENTIVES_CONTROLLER.claim(address(dlpVault), tokens);
+
+            (uint256 balanceAfter, , ) = MFD.earnedBalances(address(dlpVault));
+            uint256 reward = balanceAfter - balanceBefore;
+            // update rate
+            if (reward > 0) {
+                dAccTokenPerShare += (reward * PRECISION) / dTotalSB;
+            }
+        }
 
         // update pending
         Stake storage info = stakeInfo[_account];
 
-        info.pending += (accTokenPerShare * info.aTSB) / PRECISION - info.debt;
+        info.pending +=
+            (aAccTokenPerShare * info.aTSB + dAccTokenPerShare * info.dTSB) /
+            PRECISION -
+            info.debt;
     }
 
     function _updateDebt(address _account) internal {
         Stake storage info = stakeInfo[_account];
 
-        info.debt = (accTokenPerShare * info.aTSB) / PRECISION;
+        info.debt =
+            (aAccTokenPerShare * info.aTSB + dAccTokenPerShare * info.dTSB) /
+            PRECISION;
     }
 
     //============================================================================================//
@@ -399,12 +415,18 @@ contract Leverager is
             );
         }
 
+        uint256 aTSBAmount = aToken.scaledBalanceOf(address(dlpVault)) -
+            aTSBBefore;
+        uint256 dTSBAmount = debtToken.scaledBalanceOf(address(dlpVault)) -
+            dTSBBefore;
+
         // stake info
         Stake storage info = stakeInfo[msg.sender];
-        info.aTSB += aToken.scaledBalanceOf(address(dlpVault)) - aTSBBefore;
-        info.dTSB += debtToken.scaledBalanceOf(address(dlpVault)) - dTSBBefore;
+        info.aTSB += aTSBAmount;
+        info.dTSB += dTSBAmount;
 
-        totalSB += aToken.scaledBalanceOf(address(dlpVault)) - aTSBBefore;
+        aTotalSB += aTSBAmount;
+        dTotalSB += dTSBAmount;
     }
 
     /**
@@ -466,11 +488,18 @@ contract Leverager is
             );
         }
 
-        Stake storage info = stakeInfo[msg.sender];
-        info.aTSB -= aTSBBefore - aToken.scaledBalanceOf(address(dlpVault));
-        info.dTSB -= dTSBBefore - debtToken.scaledBalanceOf(address(dlpVault));
+        uint256 aTSBAmount = aTSBBefore -
+            aToken.scaledBalanceOf(address(dlpVault));
+        uint256 dTSBAmount = dTSBBefore -
+            debtToken.scaledBalanceOf(address(dlpVault));
 
-        totalSB -= aTSBBefore - aToken.scaledBalanceOf(address(dlpVault));
+        // stake info
+        Stake storage info = stakeInfo[msg.sender];
+        info.aTSB -= aTSBAmount;
+        info.dTSB -= dTSBAmount;
+
+        aTotalSB -= aTSBAmount;
+        dTotalSB -= dTSBAmount;
     }
 
     //============================================================================================//
@@ -546,31 +575,36 @@ contract Leverager is
         view
         returns (uint256 amount, uint256 feeAmount, uint256 expireAt)
     {
-        if (totalSB == 0) return (0, 0, 0);
+        address[] memory tokens = new address[](1);
 
-        uint256 reward;
-        {
-            address[] memory tokens = new address[](2);
+        // claimable reward for aToken
+        uint256 _aAccTokenPerShare = aAccTokenPerShare;
+        if (aTotalSB > 0) {
             tokens[0] = getAToken();
-            tokens[1] = getVDebtToken();
             uint256[] memory rewards = CHEF_INCENTIVES_CONTROLLER
                 .pendingRewards(address(dlpVault), tokens);
-            uint256 length = rewards.length;
 
-            for (uint256 i = 0; i < length; ) {
-                unchecked {
-                    reward += rewards[i];
-                    ++i;
-                }
+            if (rewards[0] > 0) {
+                _aAccTokenPerShare += (rewards[0] * PRECISION) / aTotalSB;
             }
         }
 
-        uint256 _accTokenPerShare = accTokenPerShare +
-            (reward * PRECISION) /
-            totalSB;
+        // claimable reward for debtToken
+        uint256 _dAccTokenPerShare = dAccTokenPerShare;
+        if (dTotalSB > 0) {
+            tokens[0] = getVDebtToken();
+            uint256[] memory rewards = CHEF_INCENTIVES_CONTROLLER
+                .pendingRewards(address(dlpVault), tokens);
+
+            if (rewards[0] > 0) {
+                _dAccTokenPerShare += (rewards[0] * PRECISION) / dTotalSB;
+            }
+        }
+
+        // update pending
         Stake memory info = stakeInfo[_account];
         uint256 pending = info.pending +
-            (_accTokenPerShare * info.aTSB) /
+            (_aAccTokenPerShare * info.aTSB + dAccTokenPerShare * info.dTSB) /
             PRECISION -
             info.debt;
 

@@ -8,6 +8,12 @@ import "./IFeeDistribution.sol";
 import "./IMintableToken.sol";
 
 interface IMultiFeeDistribution is IFeeDistribution {
+    struct EarnedBalance {
+        uint256 amount;
+        uint256 unlockTime;
+        uint256 penalty;
+    }
+
     function exit(bool claimRewards) external;
 
     function stake(
@@ -33,6 +39,17 @@ interface IMultiFeeDistribution is IFeeDistribution {
     function autoRelockDisabled(address user) external view returns (bool);
 
     function totalBalance(address user) external view returns (uint256);
+
+    function earnedBalances(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256 total,
+            uint256 unlocked,
+            EarnedBalance[] memory earningsData
+        );
 
     function zapVestingToLp(address _address) external returns (uint256);
 

@@ -199,7 +199,8 @@ contract LeveragerTest is Test, AddressProvider {
     }
 
     function testLoop() public {
-        console2.log("Before TotalSB: ", leverager.totalSB());
+        console2.log("Before ATotalSB: ", leverager.aTotalSB());
+        console2.log("Before DTotalSB: ", leverager.dTotalSB());
         console2.log(
             "Before Balance: ",
             ERC20(USDC).balanceOf(address(leverager))
@@ -215,7 +216,8 @@ contract LeveragerTest is Test, AddressProvider {
         leverager.loop(100 gwei);
         vm.stopPrank();
 
-        console2.log("After TotalSB: ", leverager.totalSB());
+        console2.log("After ATotalSB: ", leverager.aTotalSB());
+        console2.log("After DTotalSB: ", leverager.dTotalSB());
         console2.log(
             "After Balance: ",
             ERC20(USDC).balanceOf(address(leverager))
@@ -846,7 +848,7 @@ contract LeveragerTest is Test, AddressProvider {
         }
         {
             (, , , , uint32 expireAt) = leverager.claimInfo(2);
-            vm.warp(expireAt + 1);
+            vm.warp(expireAt + 100);
             console2.log("===== At: ", block.timestamp);
 
             leverager.claimVested(2);
