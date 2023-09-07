@@ -24,6 +24,8 @@ contract DeployLeverager is Script, AddressProvider {
     // Leverager config
     uint256 public fee = 5e5;
     uint256 public borrowRatio = 6e5;
+    uint256 public aHardCap = 5000 ether;
+    uint256 public minStakeAmount = 0;
 
     function run() public {
         console2.log("Broadcast sender", msg.sender);
@@ -42,13 +44,15 @@ contract DeployLeverager is Script, AddressProvider {
                 impl,
                 proxyAdmin,
                 abi.encodeWithSignature(
-                    "initialize(address,address,address,address,uint256,uint256)",
+                    "initialize(address,address,address,address,uint256,uint256,uint256,uint256)",
                     kernel,
                     dlpVault,
                     USDC,
                     address(distributor),
                     fee,
-                    borrowRatio
+                    borrowRatio,
+                    aHardCap,
+                    minStakeAmount
                 )
             )
         );

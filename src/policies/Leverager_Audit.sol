@@ -99,6 +99,12 @@ contract Leverager is
     /// @notice Total scaled balance of debtToken
     uint256 public dTotalSB;
 
+    /// @notice Hard cap of aToken
+    uint256 public aHardCap;
+
+    /// @notice Minimum of stake amount
+    uint256 public minStakeAmount;
+
     /// @notice Stake info
     struct Stake {
         uint256 aTSB; // aToken's scaled balance
@@ -127,6 +133,8 @@ contract Leverager is
     event KernelChanged(address kernel);
     event DistributorChanged(address distributor);
     event BorrowRatioUpdated(uint256 borrowRatio);
+    event HardCapChanged(uint256 aHardCap);
+    event MinStakeAmountChanged(uint256 minStakeAmount);
     event Staked(address indexed account, uint256 amount);
     event Unstaked(address indexed account, uint256 amount);
     event Claimed(
@@ -153,6 +161,8 @@ contract Leverager is
     error INVALID_CLAIM();
     error ERROR_BORROW_RATIO(uint256 borrowRatio);
     error ERROR_FEE(uint256 fee);
+    error EXCEED_HARD_CAP();
+    error LESS_THAN_MIN_AMOUNT();
 
     //============================================================================================//
     //                                         INITIALIZE                                         //
@@ -169,7 +179,9 @@ contract Leverager is
         IERC20 _asset,
         IRewardDistributor _distributor,
         uint256 _fee,
-        uint256 _borrowRatio
+        uint256 _borrowRatio,
+        uint256 _aHardCap,
+        uint256 _minStakeAmount
     ) external initializer {
         if (_fee >= MULTIPLIER) revert ERROR_FEE(_fee);
         if (_borrowRatio >= MULTIPLIER) revert ERROR_BORROW_RATIO(_borrowRatio);
@@ -180,6 +192,8 @@ contract Leverager is
         distributor = _distributor;
         fee = _fee;
         borrowRatio = _borrowRatio;
+        aHardCap = _aHardCap;
+        minStakeAmount = _minStakeAmount;
 
         _asset.safeApprove(address(LENDING_POOL), type(uint256).max);
         _asset.safeApprove(address(AAVE_LENDING_POOL), type(uint256).max);
@@ -250,6 +264,18 @@ contract Leverager is
         distributor = _distributor;
 
         emit DistributorChanged(address(_distributor));
+    }
+
+    function setHardCap(uint256 _aHardCap) external onlyAdmin {
+        aHardCap = _aHardCap;
+
+        emit HardCapChanged(_aHardCap);
+    }
+
+    function setMinStakeAmount(uint256 _minStakeAmount) external onlyAdmin {
+        minStakeAmount = _minStakeAmount;
+
+        emit MinStakeAmountChanged(_minStakeAmount);
     }
 
     function recoverERC20(
@@ -531,12 +557,19 @@ contract Leverager is
     }
 
     function stake(uint256 _amount) external nonReentrant {
-        if (_amount == 0) revert INVALID_AMOUNT();
+        if (_amount < minStakeAmount) revert LESS_THAN_MIN_AMOUNT();
 
         _update(msg.sender);
 
         asset.safeTransferFrom(msg.sender, address(this), _amount);
         _loop(_amount);
+
+        if (
+            _rayMul(
+                aTotalSB,
+                LENDING_POOL.getReserveNormalizedIncome(address(asset))
+            ) > aHardCap
+        ) revert EXCEED_HARD_CAP();
 
         _updateDebt(msg.sender);
 

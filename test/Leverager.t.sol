@@ -48,6 +48,8 @@ contract LeveragerTest is Test, AddressProvider {
     uint256 public fee = 5e5;
     uint256 public borrowRatio = 6e5;
     uint256 public multiplier = 1e6;
+    uint256 public aHardCap = 5000 ether;
+    uint256 public minStakeAmount = 0;
 
     uint256 public vaultCap = 100000 ether;
 
@@ -123,13 +125,15 @@ contract LeveragerTest is Test, AddressProvider {
                     impl,
                     proxyAdmin,
                     abi.encodeWithSignature(
-                        "initialize(address,address,address,address,uint256,uint256)",
+                        "initialize(address,address,address,address,uint256,uint256,uint256,uint256)",
                         address(kernel),
                         address(dlpVault),
                         USDC,
                         address(distributor),
                         fee,
-                        borrowRatio
+                        borrowRatio,
+                        aHardCap,
+                        minStakeAmount
                     )
                 )
             );
