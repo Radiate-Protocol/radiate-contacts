@@ -340,7 +340,7 @@ contract DLPVault is
     function enableCreditDelegation(
         ICreditDelegationToken _token,
         address _leverager
-    ) external onlyAdmin {
+    ) external onlyAdmin onlyLeverager(_leverager) {
         _token.approveDelegation(_leverager, type(uint256).max);
 
         emit CreditDelegationEnabled(address(_token), _leverager);
