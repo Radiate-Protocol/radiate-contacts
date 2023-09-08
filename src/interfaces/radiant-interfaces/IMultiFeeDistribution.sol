@@ -8,12 +8,6 @@ import "./IFeeDistribution.sol";
 import "./IMintableToken.sol";
 
 interface IMultiFeeDistribution is IFeeDistribution {
-    struct EarnedBalance {
-        uint256 amount;
-        uint256 unlockTime;
-        uint256 penalty;
-    }
-
     function exit(bool claimRewards) external;
 
     function stake(

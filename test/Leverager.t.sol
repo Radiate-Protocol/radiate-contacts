@@ -48,8 +48,10 @@ contract LeveragerTest is Test, AddressProvider {
     uint256 public fee = 5e5;
     uint256 public borrowRatio = 6e5;
     uint256 public multiplier = 1e6;
-    uint256 public aHardCap = 5000 ether;
-    uint256 public minStakeAmount = 0;
+    uint256 public aHardCap = 5000000000; // 5000 USDC
+    uint256 public minStakeAmount = 100000000; // 100 USDC
+    uint256 public liquidateThreshold = 75e4; // 75%
+    uint256 public liquidateReward = 20000000; // 20 USDC
 
     uint256 public vaultCap = 100000 ether;
 
@@ -125,7 +127,7 @@ contract LeveragerTest is Test, AddressProvider {
                     impl,
                     proxyAdmin,
                     abi.encodeWithSignature(
-                        "initialize(address,address,address,address,uint256,uint256,uint256,uint256)",
+                        "initialize(address,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256)",
                         address(kernel),
                         address(dlpVault),
                         USDC,
@@ -133,7 +135,9 @@ contract LeveragerTest is Test, AddressProvider {
                         fee,
                         borrowRatio,
                         aHardCap,
-                        minStakeAmount
+                        minStakeAmount,
+                        liquidateThreshold,
+                        liquidateReward
                     )
                 )
             );
@@ -871,6 +875,85 @@ contract LeveragerTest is Test, AddressProvider {
 
             Leverager.Claim[] memory info = leverager.claimed(alice);
             assertEq(info.length, 0);
+        }
+    }
+
+    function testLiquidate() public {
+        uint256 assets = 100000000;
+
+        {
+            console2.log("Alice staking: ", assets);
+
+            vm.startPrank(alice);
+            ERC20(USDC).approve(address(leverager), type(uint256).max);
+            leverager.stake(assets);
+            vm.stopPrank();
+        }
+        {
+            _borrowAndRepay();
+        }
+        {
+            vm.warp(block.timestamp + 10 * 86400);
+            console2.log("===== At: ", block.timestamp);
+
+            (
+                uint256 aTSB,
+                uint256 dTSB,
+                uint256 pending,
+                uint256 debt
+            ) = leverager.stakeInfo(alice);
+            console2.log("Alice stake info: ", aTSB, dTSB);
+            console2.log(pending, debt);
+
+            (uint256 aTokenAmount, uint256 debtTokenAmount) = leverager.staked(
+                alice
+            );
+            console2.log("Alice staked: ", aTokenAmount, debtTokenAmount);
+
+            console2.log("Alice liquidatable: ", leverager.liquidatable(alice));
+        }
+        {
+            vm.warp(block.timestamp + 4 * 365 * 86400);
+            console2.log("===== At: ", block.timestamp);
+
+            (
+                uint256 aTSB,
+                uint256 dTSB,
+                uint256 pending,
+                uint256 debt
+            ) = leverager.stakeInfo(alice);
+            console2.log("Alice stake info: ", aTSB, dTSB);
+            console2.log(pending, debt);
+
+            (uint256 aTokenAmount, uint256 debtTokenAmount) = leverager.staked(
+                alice
+            );
+            console2.log("Alice staked: ", aTokenAmount, debtTokenAmount);
+
+            console2.log("Alice liquidatable: ", leverager.liquidatable(alice));
+        }
+        {
+            console2.log("===== Liquidate: ");
+
+            vm.startPrank(bob);
+            leverager.liquidate(alice);
+            vm.stopPrank();
+
+            (
+                uint256 aTSB,
+                uint256 dTSB,
+                uint256 pending,
+                uint256 debt
+            ) = leverager.stakeInfo(alice);
+            console2.log("Alice stake info: ", aTSB, dTSB);
+            console2.log(pending, debt);
+
+            (uint256 aTokenAmount, uint256 debtTokenAmount) = leverager.staked(
+                alice
+            );
+            console2.log("Alice staked: ", aTokenAmount, debtTokenAmount);
+
+            console2.log("Alice liquidatable: ", leverager.liquidatable(alice));
         }
     }
 }

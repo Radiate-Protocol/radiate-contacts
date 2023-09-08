@@ -105,6 +105,12 @@ contract Leverager is
     /// @notice Minimum of stake amount
     uint256 public minStakeAmount;
 
+    /// @notice Liquidate threshold
+    uint256 public liquidateThreshold;
+
+    /// @notice Liqudate reward ( < minStakeAmount * (100% - liquidateThreshold))
+    uint256 public liquidateReward;
+
     /// @notice Stake info
     struct Stake {
         uint256 aTSB; // aToken's scaled balance
@@ -133,7 +139,11 @@ contract Leverager is
     event KernelChanged(address kernel);
     event DistributorChanged(address distributor);
     event HardCapChanged(uint256 aHardCap);
-    event MinStakeAmountChanged(uint256 minStakeAmount);
+    event StakeAandLiquidateInfoChanged(
+        uint256 minStakeAmount,
+        uint256 liquidateThreshold,
+        uint256 liquidateReward
+    );
     event Staked(address indexed account, uint256 amount);
     event Unstaked(address indexed account, uint256 amount);
     event Claimed(
@@ -147,6 +157,7 @@ contract Leverager is
         uint256 indexed index,
         uint256 amount
     );
+    event Liquidated(address indexed account);
 
     //============================================================================================//
     //                                           ERROR                                            //
@@ -160,6 +171,9 @@ contract Leverager is
     error INVALID_CLAIM();
     error ERROR_BORROW_RATIO(uint256 borrowRatio);
     error ERROR_FEE(uint256 fee);
+    error ZERO_MIN_STAKE_AMOUNT();
+    error ERROR_LIQUIDATE_THRESHOLD(uint256 liquidateThreshold);
+    error ERROR_LIQUIDATE_REWARD(uint256 liquidateReward);
     error EXCEED_HARD_CAP();
     error LESS_THAN_MIN_AMOUNT();
 
@@ -180,10 +194,20 @@ contract Leverager is
         uint256 _fee,
         uint256 _borrowRatio,
         uint256 _aHardCap,
-        uint256 _minStakeAmount
+        uint256 _minStakeAmount,
+        uint256 _liquidateThreshold,
+        uint256 _liquidateReward
     ) external initializer {
         if (_fee >= MULTIPLIER) revert ERROR_FEE(_fee);
         if (_borrowRatio >= MULTIPLIER) revert ERROR_BORROW_RATIO(_borrowRatio);
+        if (_minStakeAmount == 0) revert ZERO_MIN_STAKE_AMOUNT();
+        if (_liquidateThreshold >= MULTIPLIER)
+            revert ERROR_LIQUIDATE_THRESHOLD(_liquidateThreshold);
+        if (
+            _liquidateReward >=
+            ((_minStakeAmount * (MULTIPLIER - _liquidateThreshold)) /
+                MULTIPLIER)
+        ) revert ERROR_LIQUIDATE_REWARD(_liquidateReward);
 
         kernel = _kernel;
         dlpVault = _dlpVault;
@@ -193,6 +217,8 @@ contract Leverager is
         borrowRatio = _borrowRatio;
         aHardCap = _aHardCap;
         minStakeAmount = _minStakeAmount;
+        liquidateThreshold = _liquidateThreshold;
+        liquidateReward = _liquidateReward;
 
         _asset.safeApprove(address(LENDING_POOL), type(uint256).max);
         _asset.safeApprove(address(AAVE_LENDING_POOL), type(uint256).max);
@@ -271,10 +297,29 @@ contract Leverager is
         emit HardCapChanged(_aHardCap);
     }
 
-    function setMinStakeAmount(uint256 _minStakeAmount) external onlyAdmin {
-        minStakeAmount = _minStakeAmount;
+    function setStakeAndLiquidateInfo(
+        uint256 _minStakeAmount,
+        uint256 _liquidateThreshold,
+        uint256 _liquidateReward
+    ) external onlyAdmin {
+        if (_minStakeAmount == 0) revert ZERO_MIN_STAKE_AMOUNT();
+        if (_liquidateThreshold >= MULTIPLIER)
+            revert ERROR_LIQUIDATE_THRESHOLD(_liquidateThreshold);
+        if (
+            _liquidateReward >=
+            ((_minStakeAmount * (MULTIPLIER - _liquidateThreshold)) /
+                MULTIPLIER)
+        ) revert ERROR_LIQUIDATE_REWARD(_liquidateReward);
 
-        emit MinStakeAmountChanged(_minStakeAmount);
+        minStakeAmount = _minStakeAmount;
+        liquidateThreshold = _liquidateThreshold;
+        liquidateReward = _liquidateReward;
+
+        emit StakeAandLiquidateInfoChanged(
+            _minStakeAmount,
+            _liquidateThreshold,
+            _liquidateReward
+        );
     }
 
     function recoverERC20(
@@ -706,5 +751,60 @@ contract Leverager is
         distributor.receiveReward(address(RDNT), info.feeAmount);
 
         emit ClaimedVested(info.receiver, _index, info.amount);
+    }
+
+    function liquidatable(address _account) public view returns (bool) {
+        Stake storage info = stakeInfo[_account];
+
+        // if no position
+        if (info.aTSB == 0) return false;
+
+        // if not meet the threshold
+        (uint256 aTokenAmount, uint256 debtTokenAmount) = staked(_account);
+        if (debtTokenAmount < (aTokenAmount * liquidateThreshold) / MULTIPLIER)
+            return false;
+
+        return true;
+    }
+
+    function liquidate(address _account) external nonReentrant {
+        // if liquidatable
+        if (!liquidatable(_account)) return;
+
+        _update(_account);
+
+        IAToken aToken = IAToken(getAToken());
+        IVariableDebtToken debtToken = IVariableDebtToken(getVDebtToken());
+
+        uint256 aTSBBefore = aToken.scaledBalanceOf(address(dlpVault));
+        uint256 dTSBBefore = debtToken.scaledBalanceOf(address(dlpVault));
+
+        // liquidate
+        (, uint256 debtTokenAmount) = staked(_account);
+        AAVE_LENDING_POOL.flashLoanSimple(
+            address(dlpVault),
+            address(asset),
+            debtTokenAmount,
+            abi.encode(liquidateReward, msg.sender),
+            0
+        );
+
+        uint256 aTSBAmount = aTSBBefore -
+            aToken.scaledBalanceOf(address(dlpVault));
+        uint256 dTSBAmount = dTSBBefore -
+            debtToken.scaledBalanceOf(address(dlpVault));
+
+        // stake info
+        Stake storage info = stakeInfo[_account];
+        info.aTSB -= aTSBAmount;
+        info.dTSB -= dTSBAmount;
+
+        aTotalSB -= aTSBAmount;
+        dTotalSB -= dTSBAmount;
+
+        _updateDebt(_account);
+
+        // event
+        emit Liquidated(_account);
     }
 }

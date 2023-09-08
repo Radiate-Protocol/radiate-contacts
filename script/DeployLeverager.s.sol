@@ -24,8 +24,10 @@ contract DeployLeverager is Script, AddressProvider {
     // Leverager config
     uint256 public fee = 5e5;
     uint256 public borrowRatio = 6e5;
-    uint256 public aHardCap = 5000 ether;
-    uint256 public minStakeAmount = 0;
+    uint256 public aHardCap = 5000 ether; // 5000 DAI
+    uint256 public minStakeAmount = 100 ether; // 100 DAI
+    uint256 public liquidateThreshold = 75e4; // 75%
+    uint256 public liquidateReward = 20 ether; // 20 DAI
 
     function run() public {
         console2.log("Broadcast sender", msg.sender);
@@ -37,22 +39,24 @@ contract DeployLeverager is Script, AddressProvider {
         MockRewardDistributor distributor = new MockRewardDistributor();
         console2.log("Reward Distributor", address(distributor));
 
-        // USDC Leverager
+        // DAI Leverager
         address impl = address(new Leverager());
         address proxy = address(
             new TransparentUpgradeableProxy(
                 impl,
                 proxyAdmin,
                 abi.encodeWithSignature(
-                    "initialize(address,address,address,address,uint256,uint256,uint256,uint256)",
+                    "initialize(address,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256)",
                     kernel,
                     dlpVault,
-                    USDC,
+                    DAI,
                     address(distributor),
                     fee,
                     borrowRatio,
                     aHardCap,
-                    minStakeAmount
+                    minStakeAmount,
+                    liquidateThreshold,
+                    liquidateReward
                 )
             )
         );
@@ -83,7 +87,7 @@ contract DeployLeverager is Script, AddressProvider {
             json = vm.serializeAddress(objName, "impl", impl);
             json = vm.serializeAddress(objName, "proxy", proxy);
 
-            string memory filename = "./json/leverager_usdc.json";
+            string memory filename = "./json/leverager_dai.json";
             vm.writeJson(json, filename);
         }
     }
