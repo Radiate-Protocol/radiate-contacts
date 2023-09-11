@@ -158,6 +158,7 @@ contract Leverager is
         uint256 amount
     );
     event Liquidated(address indexed account);
+    event ReceivedReward(address indexed account, uint256 amount);
 
     //============================================================================================//
     //                                           ERROR                                            //
@@ -220,8 +221,18 @@ contract Leverager is
         liquidateThreshold = _liquidateThreshold;
         liquidateReward = _liquidateReward;
 
-        _asset.safeApprove(address(LENDING_POOL), type(uint256).max);
-        _asset.safeApprove(address(AAVE_LENDING_POOL), type(uint256).max);
+        if (_asset.allowance(address(this), address(LENDING_POOL)) == 0) {
+            _asset.safeIncreaseAllowance(
+                address(LENDING_POOL),
+                type(uint256).max
+            );
+        }
+        if (_asset.allowance(address(this), address(AAVE_LENDING_POOL)) == 0) {
+            _asset.safeIncreaseAllowance(
+                address(AAVE_LENDING_POOL),
+                type(uint256).max
+            );
+        }
 
         __ReentrancyGuard_init();
     }
@@ -450,6 +461,10 @@ contract Leverager is
         info.debt =
             (aAccTokenPerShare * info.aTSB + dAccTokenPerShare * info.dTSB) /
             PRECISION;
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 
     //============================================================================================//
@@ -743,12 +758,34 @@ contract Leverager is
         info.isClaimed = true;
 
         // reward
-        dlpVault.withdrawForLeverager(info.receiver, info.amount);
+        {
+            uint256 amount = _min(RDNT.balanceOf(address(this)), info.amount);
+            if (amount > 0) {
+                RDNT.safeTransfer(info.receiver, amount);
+            }
+            if (info.amount > amount) {
+                dlpVault.withdrawForLeverager(
+                    info.receiver,
+                    info.amount - amount
+                );
+            }
+        }
 
         // fee
-        dlpVault.withdrawForLeverager(address(this), info.feeAmount);
-        RDNT.safeApprove(address(distributor), info.feeAmount);
-        distributor.receiveReward(address(RDNT), info.feeAmount);
+        {
+            uint256 amount = _min(
+                RDNT.balanceOf(address(this)),
+                info.feeAmount
+            );
+            if (info.feeAmount > amount) {
+                dlpVault.withdrawForLeverager(
+                    address(this),
+                    info.feeAmount - amount
+                );
+            }
+            RDNT.safeIncreaseAllowance(address(distributor), info.feeAmount);
+            distributor.receiveReward(address(RDNT), info.feeAmount);
+        }
 
         emit ClaimedVested(info.receiver, _index, info.amount);
     }
@@ -806,5 +843,34 @@ contract Leverager is
 
         // event
         emit Liquidated(_account);
+    }
+
+    function receiveReward(uint256 _amount) external nonReentrant {
+        if (_amount == 0) revert INVALID_AMOUNT();
+
+        uint256 aTokenAmount = IERC20(getAToken()).balanceOf(address(dlpVault));
+        uint256 debtTokenAmount = IERC20(getVDebtToken()).balanceOf(
+            address(dlpVault)
+        );
+        if (aTokenAmount == 0) return;
+
+        // split reward for AToken and DebtToken
+        uint256 rewardForAToken = (_amount * aTokenAmount) /
+            (aTokenAmount + debtTokenAmount);
+        uint256 rewardForDebtToken = _amount - rewardForAToken;
+
+        // update reward rate
+        if (rewardForAToken > 0) {
+            aAccTokenPerShare += (rewardForAToken * PRECISION) / aTotalSB;
+        }
+        if (rewardForDebtToken > 0) {
+            dAccTokenPerShare += (rewardForDebtToken * PRECISION) / dTotalSB;
+        }
+
+        // transfer token
+        RDNT.safeTransferFrom(msg.sender, address(this), _amount);
+
+        // event
+        emit ReceivedReward(msg.sender, _amount);
     }
 }
