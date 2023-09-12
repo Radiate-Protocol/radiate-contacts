@@ -856,7 +856,11 @@ contract DLPVault is
 
     function withdrawalsOf(
         address _account
-    ) external view returns (WithdrawalQueue[] memory queues) {
+    )
+        external
+        view
+        returns (uint256[] memory indexes, WithdrawalQueue[] memory queues)
+    {
         uint256 length = withdrawalQueues.length;
         uint256 i;
         uint256 j;
@@ -875,6 +879,7 @@ contract DLPVault is
             }
         }
 
+        indexes = new uint256[](j);
         queues = new WithdrawalQueue[](j);
         j = 0;
 
@@ -882,6 +887,7 @@ contract DLPVault is
             WithdrawalQueue memory queue = withdrawalQueues[i];
 
             if (!queue.isClaimed && queue.receiver == _account) {
+                indexes[j] = i;
                 queues[j++] = queue;
             }
 
