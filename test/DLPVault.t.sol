@@ -403,7 +403,8 @@ contract DLPVaultTest is Test, AddressProvider {
             assertEq(receiver, carol);
             assertEq(createdAt, uint32(block.timestamp));
 
-            assertEq(dlpVault.withdrawalsOf(alice).length, 1);
+            (uint256[] memory indexes, ) = dlpVault.withdrawalsOf(alice);
+            assertEq(indexes.length, 1);
         }
     }
 
@@ -444,7 +445,8 @@ contract DLPVaultTest is Test, AddressProvider {
             assertEq(receiver, alice);
             assertEq(createdAt, uint32(block.timestamp));
 
-            assertEq(dlpVault.withdrawalsOf(alice).length, 1);
+            (uint256[] memory indexes, ) = dlpVault.withdrawalsOf(alice);
+            assertEq(indexes.length, 1);
         }
     }
 
@@ -474,7 +476,8 @@ contract DLPVaultTest is Test, AddressProvider {
             assertEq(dlpVault.queuedDLP(), assets);
             assertEq(dlpVault.claimableDLP(), assets);
 
-            assertEq(dlpVault.withdrawalsOf(alice).length, 1);
+            (uint256[] memory indexes, ) = dlpVault.withdrawalsOf(alice);
+            assertEq(indexes.length, 1);
         }
         {
             assertEq(dlpVault.withdrawalQueueIndex(), 1);
@@ -498,7 +501,8 @@ contract DLPVaultTest is Test, AddressProvider {
             assertEq(dlpVault.queuedDLP(), 0);
             assertEq(dlpVault.claimableDLP(), 0);
 
-            assertEq(dlpVault.withdrawalsOf(alice).length, 0);
+            (uint256[] memory indexes, ) = dlpVault.withdrawalsOf(alice);
+            assertEq(indexes.length, 0);
         }
     }
 }

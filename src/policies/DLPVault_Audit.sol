@@ -914,14 +914,23 @@ contract DLPVault is
 
     function withdrawalsOf(
         address _account
-    ) external view returns (WithdrawalQueue[] memory queues) {
+    )
+        external
+        view
+        returns (uint256[] memory indexes, WithdrawalQueue[] memory queues)
+    {
         EnumerableSet.UintSet storage withdrawals = _userWithdrawals[_account];
         uint256 length = withdrawals.length();
 
+        indexes = new uint256[](length);
         queues = new WithdrawalQueue[](length);
 
         for (uint256 i = 0; i < length; ) {
-            queues[i] = withdrawalQueues[withdrawals.at(i)];
+            uint256 index = withdrawals.at(i);
+
+            indexes[i] = index;
+            queues[i] = withdrawalQueues[index];
+
             unchecked {
                 ++i;
             }
