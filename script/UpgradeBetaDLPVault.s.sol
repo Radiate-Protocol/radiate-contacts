@@ -10,7 +10,7 @@ import "lib/openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgrad
 import "../src/policies/DLPVault_Audit.sol";
 import "../test/src/AddressProvider.sol";
 
-// forge script UpgradeBetaDLPVault --rpc-url $ARBITRUM_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --skip-simulation --slow -vvvv
+// forge script UpgradeBetaDLPVault --rpc-url $ARBITRUM_RPC_URL --private-key $RADIATE_PRIVATE_KEY --broadcast --verify --skip-simulation --slow -vvvv
 contract UpgradeBetaDLPVault is Script, AddressProvider {
     // Deploy config
     address constant proxyAdmin = 0xEA871D39057E94691FA7323042CC015601eA4AF2;
