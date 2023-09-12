@@ -166,7 +166,7 @@ contract DLPVault is
         kernel = _kernel;
         defaultLockIndex = 0;
 
-        DLP.safeApprove(address(MFD), type(uint256).max);
+        DLP.approve(address(MFD), type(uint256).max);
 
         __ERC20_init(_NAME, _SYMBOL);
         __ERC4626_init(IERC20Upgradeable(address(DLP)));
@@ -381,6 +381,10 @@ contract DLPVault is
         );
     }
 
+    function setRelock(bool _status) external onlyAdmin {
+        MFD.setRelock(_status);
+    }
+
     function getRewardBaseTokens() external view returns (address[] memory) {
         uint256 length = rewards.length;
         address[] memory rewardBaseTokens = new address[](length);
@@ -501,10 +505,7 @@ contract DLPVault is
         if (
             IERC20(_asset).allowance(address(this), address(LENDING_POOL)) == 0
         ) {
-            IERC20(_asset).safeApprove(
-                address(LENDING_POOL),
-                type(uint256).max
-            );
+            IERC20(_asset).approve(address(LENDING_POOL), type(uint256).max);
         }
         if (
             IERC20(_asset).allowance(
@@ -512,7 +513,7 @@ contract DLPVault is
                 address(AAVE_LENDING_POOL)
             ) == 0
         ) {
-            IERC20(_asset).safeApprove(
+            IERC20(_asset).approve(
                 address(AAVE_LENDING_POOL),
                 type(uint256).max
             );
@@ -617,10 +618,7 @@ contract DLPVault is
 
         // AToken (withdraw underlying token)
         if (reward.isAToken) {
-            IERC20(reward.token).safeApprove(
-                address(LENDING_POOL),
-                reward.pending
-            );
+            IERC20(reward.token).approve(address(LENDING_POOL), reward.pending);
 
             swapToken = IAToken(reward.token).UNDERLYING_ASSET_ADDRESS();
             swapAmount = LENDING_POOL.withdraw(
@@ -642,7 +640,7 @@ contract DLPVault is
             return;
         }
 
-        IERC20(swapToken).safeApprove(address(SWAP_ROUTER), swapAmount);
+        IERC20(swapToken).approve(address(SWAP_ROUTER), swapAmount);
 
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
@@ -854,5 +852,40 @@ contract DLPVault is
         return
             (MFD.totalBalance(address(this)) + DLP.balanceOf(address(this))) -
             (queuedDLP + boostedDLP);
+    }
+
+    function withdrawalsOf(
+        address _account
+    ) external view returns (WithdrawalQueue[] memory queues) {
+        uint256 length;
+
+        for (uint256 i = 0; i < withdrawalQueueIndex; ) {
+            if (
+                !withdrawalQueues[i].isClaimed &&
+                withdrawalQueues[i].receiver == _account
+            ) {
+                unchecked {
+                    ++length;
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        queues = new WithdrawalQueue[](length);
+        length = 0;
+
+        for (uint256 i = 0; i < withdrawalQueueIndex; ) {
+            if (
+                !withdrawalQueues[i].isClaimed &&
+                withdrawalQueues[i].receiver == _account
+            ) {
+                queues[length++] = withdrawalQueues[i];
+            }
+            unchecked {
+                ++i;
+            }
+        }
     }
 }

@@ -175,8 +175,8 @@ contract Leverager is
         fee = _fee;
         borrowRatio = _borrowRatio;
 
-        _asset.safeApprove(address(LENDING_POOL), type(uint256).max);
-        _asset.safeApprove(address(AAVE_LENDING_POOL), type(uint256).max);
+        _asset.approve(address(LENDING_POOL), type(uint256).max);
+        _asset.approve(address(AAVE_LENDING_POOL), type(uint256).max);
 
         __ReentrancyGuard_init();
     }
@@ -636,7 +636,7 @@ contract Leverager is
 
         // fee
         dlpVault.withdrawForLeverager(address(this), info.feeAmount);
-        RDNT.safeApprove(address(distributor), info.feeAmount);
+        RDNT.approve(address(distributor), info.feeAmount);
         distributor.receiveReward(address(RDNT), info.feeAmount);
 
         emit ClaimedVested(info.receiver, _index, info.amount);
