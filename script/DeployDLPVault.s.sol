@@ -15,7 +15,7 @@ import "../test/src/AddressProvider.sol";
 contract DeployDLPVault is Script, AddressProvider {
     // Deploy config
     address constant proxyAdmin = 0xEA871D39057E94691FA7323042CC015601eA4AF2;
-    address constant kernel = 0xD85317aA40c4258318Dc7EdE5491B38e92F41ddb;
+    address constant kernel = 0x6d37F6eeDc9ED384E56C67827001901F9Af2EA5F;
 
     // DLP vault config
     uint256 public depositFee = 0;
