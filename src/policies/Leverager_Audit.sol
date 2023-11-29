@@ -421,7 +421,13 @@ contract Leverager is
             tokens[0] = getAToken();
             (uint256 balanceBefore, , ) = MFD.earnedBalances(address(dlpVault));
 
-            CHEF_INCENTIVES_CONTROLLER.claim(address(dlpVault), tokens);
+            address(CHEF_INCENTIVES_CONTROLLER).call(
+                abi.encodeWithSignature(
+                    "claim(address,address[])",
+                    address(dlpVault),
+                    tokens
+                )
+            );
 
             (uint256 balanceAfter, , ) = MFD.earnedBalances(address(dlpVault));
             uint256 reward = balanceAfter - balanceBefore;
@@ -436,7 +442,13 @@ contract Leverager is
             tokens[0] = getVDebtToken();
             (uint256 balanceBefore, , ) = MFD.earnedBalances(address(dlpVault));
 
-            CHEF_INCENTIVES_CONTROLLER.claim(address(dlpVault), tokens);
+            address(CHEF_INCENTIVES_CONTROLLER).call(
+                abi.encodeWithSignature(
+                    "claim(address,address[])",
+                    address(dlpVault),
+                    tokens
+                )
+            );
 
             (uint256 balanceAfter, , ) = MFD.earnedBalances(address(dlpVault));
             uint256 reward = balanceAfter - balanceBefore;

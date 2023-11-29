@@ -3,6 +3,8 @@
 pragma solidity 0.8.15;
 
 interface IPriceProvider {
+    function owner() external view returns (address);
+
     function getTokenPrice() external view returns (uint256);
 
     function getTokenPriceUsd() external view returns (uint256);
@@ -16,4 +18,8 @@ interface IPriceProvider {
     function update() external;
 
     function baseTokenPriceInUsdProxyAggregator() external view returns (address);
+
+    function setUsePool(bool _usePool) external;
+
+    function setAggregator(address _baseAssetChainlinkAdapter) external;
 }

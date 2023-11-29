@@ -745,7 +745,7 @@ contract DLPVault is
 
     function processWithdrawalQueue() public {
         // withdraw expired lock
-        MFD.withdrawExpiredLocksForWithOptions(address(this), 0, true);
+        MFD.withdrawExpiredLocksForWithOptions(address(this), 0, false);
 
         uint256 balance = DLP.balanceOf(address(this)) - claimableDLP;
         uint256 length = withdrawalQueues.length;

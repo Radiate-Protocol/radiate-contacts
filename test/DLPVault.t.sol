@@ -14,6 +14,8 @@ import {RolesAdmin} from "../src/policies/RolesAdmin.sol";
 import {Kernel, Actions} from "../src/Kernel.sol";
 import {DLPVault} from "../src/policies/DLPVault_Audit.sol";
 
+import {IAaveOracle} from "../src/interfaces/radiant-interfaces/IAaveOracle.sol";
+import {IPriceProvider} from "../src/interfaces/radiant-interfaces/IPriceProvider.sol";
 import {ILendingPool} from "../src/interfaces/radiant-interfaces/ILendingPool.sol";
 import {IFeeDistribution} from "../src/interfaces/radiant-interfaces/IFeeDistribution.sol";
 import {IMultiFeeDistribution, LockedBalance} from "../src/interfaces/radiant-interfaces/IMultiFeeDistribution.sol";
@@ -22,6 +24,7 @@ import {MockERC20} from "./mocks/MockERC20.sol";
 import {UserFactory} from "./lib/UserFactory.sol";
 import {AddressProvider} from "./src/AddressProvider.sol";
 import {DLPVault_Test} from "./src/DLPVault_Test.sol";
+import {UnvalidatedChainlinkAdapter} from "./src/UnvalidatedChainlinkAdapter.sol";
 
 contract DLPVaultTest is Test, AddressProvider {
     Kernel public kernel;
@@ -45,6 +48,8 @@ contract DLPVaultTest is Test, AddressProvider {
     address public carol;
 
     function setUp() public {
+        _setupOracle();
+
         // Proxy Admin
         address proxyAdmin = address(new ProxyAdmin());
 
@@ -140,7 +145,7 @@ contract DLPVaultTest is Test, AddressProvider {
             vm.stopPrank();
 
             vm.startPrank(WBTC_HOLDER);
-            ERC20(WBTC).transfer(alice, 300 gwei);
+            ERC20(WBTC).transfer(alice, 200 gwei);
             vm.stopPrank();
 
             vm.startPrank(DAI_HOLDER);
@@ -158,6 +163,90 @@ contract DLPVaultTest is Test, AddressProvider {
             lendingPool.deposit(WBTC, 15 gwei, alice, 0);
             ERC20(USDT).approve(address(lendingPool), type(uint256).max);
             lendingPool.deposit(USDT, 500 gwei, alice, 0);
+            vm.stopPrank();
+        }
+    }
+
+    function _setupOracle() internal {
+        IAaveOracle aaveOracle = IAaveOracle(AAVE_ORACLE);
+        IPriceProvider priceProvider = IPriceProvider(PRICE_PROVIDER);
+
+        // CONFIGURE CHAINLINK ADAPTERS
+        {
+            uint256 heartbeat = 86400;
+            address owner = aaveOracle.owner();
+            address[] memory assets = new address[](7);
+            address[] memory sources = new address[](7);
+
+            vm.startPrank(owner);
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        WBTC_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[0] = WBTC;
+                sources[0] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        USDC_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[1] = USDC;
+                sources[1] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        USDT_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[2] = USDT;
+                sources[2] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        DAI_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[3] = DAI;
+                sources[3] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        WETH_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[4] = WETH;
+                sources[4] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        WSTETH_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[5] = WSTETH;
+                sources[5] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        ARB_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[6] = ARB;
+                sources[6] = address(adapter);
+            }
+
+            aaveOracle.setAssetSources(assets, sources);
+            vm.stopPrank();
+        }
+
+        // CONFIGURE PRICE PROVIDER
+        {
+            address owner = aaveOracle.owner();
+
+            vm.startPrank(owner);
+            priceProvider.setUsePool(true);
+            priceProvider.setAggregator(aaveOracle.getSourceOfAsset(WETH));
             vm.stopPrank();
         }
     }
@@ -278,7 +367,7 @@ contract DLPVaultTest is Test, AddressProvider {
         vm.stopPrank();
 
         vm.startPrank(rWBTC_HOLDER);
-        ERC20(rWBTC).transfer(address(dlpVault), 1 gwei);
+        ERC20(rWBTC).transfer(address(dlpVault), 0.5 gwei);
         vm.stopPrank();
 
         vm.startPrank(rDAI_HOLDER);
@@ -456,7 +545,7 @@ contract DLPVaultTest is Test, AddressProvider {
         {
             assertEq(dlpVault.withdrawalQueueIndex(), 0);
 
-            vm.warp(block.timestamp + 31 * 86400);
+            vm.warp(block.timestamp + 31 * 86400 + 1);
             dlpVault.compound();
 
             console2.log(

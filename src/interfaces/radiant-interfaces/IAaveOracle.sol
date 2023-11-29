@@ -12,6 +12,8 @@ interface IAaveOracle {
 
     function BASE_CURRENCY_UNIT() external view returns (uint256);
 
+    function owner() external view returns (address);
+    
     /**
      *
      * @dev returns the asset price in ETH
@@ -19,4 +21,9 @@ interface IAaveOracle {
     function getAssetPrice(address asset) external view returns (uint256);
 
     function getSourceOfAsset(address asset) external view returns (address);
+
+    function setAssetSources(
+        address[] calldata assets,
+        address[] calldata sources
+    ) external;
 }

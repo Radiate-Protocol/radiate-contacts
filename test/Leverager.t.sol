@@ -15,6 +15,8 @@ import {Kernel, Actions} from "../src/Kernel.sol";
 import {DLPVault} from "../src/policies/DLPVault_Audit.sol";
 import {Leverager} from "../src/policies/Leverager_Audit.sol";
 
+import {IAaveOracle} from "../src/interfaces/radiant-interfaces/IAaveOracle.sol";
+import {IPriceProvider} from "../src/interfaces/radiant-interfaces/IPriceProvider.sol";
 import {IAToken} from "../src/interfaces/radiant-interfaces/IAToken.sol";
 import {IVariableDebtToken} from "../src/interfaces/radiant-interfaces/IVariableDebtToken.sol";
 import {ICreditDelegationToken} from "../src/interfaces/radiant-interfaces/ICreditDelegationToken.sol";
@@ -28,6 +30,7 @@ import {UserFactory} from "./lib/UserFactory.sol";
 import {AddressProvider} from "./src/AddressProvider.sol";
 import {DLPVault_Test} from "./src/DLPVault_Test.sol";
 import {Leverager_Test} from "./src/Leverager_Test.sol";
+import {UnvalidatedChainlinkAdapter} from "./src/UnvalidatedChainlinkAdapter.sol";
 
 contract LeveragerTest is Test, AddressProvider {
     Kernel public kernel;
@@ -60,6 +63,8 @@ contract LeveragerTest is Test, AddressProvider {
     address public carol;
 
     function setUp() public {
+        _setupOracle();
+
         // Proxy Admin
         address proxyAdmin = address(new ProxyAdmin());
 
@@ -187,6 +192,90 @@ contract LeveragerTest is Test, AddressProvider {
             vm.startPrank(alice);
             ERC20(DLP).approve(address(dlpVault), type(uint256).max);
             dlpVault.deposit(1000 ether, alice);
+            vm.stopPrank();
+        }
+    }
+
+    function _setupOracle() internal {
+        IAaveOracle aaveOracle = IAaveOracle(AAVE_ORACLE);
+        IPriceProvider priceProvider = IPriceProvider(PRICE_PROVIDER);
+
+        // CONFIGURE CHAINLINK ADAPTERS
+        {
+            uint256 heartbeat = 86400;
+            address owner = aaveOracle.owner();
+            address[] memory assets = new address[](7);
+            address[] memory sources = new address[](7);
+
+            vm.startPrank(owner);
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        WBTC_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[0] = WBTC;
+                sources[0] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        USDC_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[1] = USDC;
+                sources[1] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        USDT_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[2] = USDT;
+                sources[2] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        DAI_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[3] = DAI;
+                sources[3] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        WETH_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[4] = WETH;
+                sources[4] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        WSTETH_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[5] = WSTETH;
+                sources[5] = address(adapter);
+            }
+            {
+                UnvalidatedChainlinkAdapter adapter = new UnvalidatedChainlinkAdapter(
+                        ARB_CHAINLINK_AGGREGATOR,
+                        heartbeat
+                    );
+                assets[6] = ARB;
+                sources[6] = address(adapter);
+            }
+
+            aaveOracle.setAssetSources(assets, sources);
+            vm.stopPrank();
+        }
+
+        // CONFIGURE PRICE PROVIDER
+        {
+            address owner = aaveOracle.owner();
+
+            vm.startPrank(owner);
+            priceProvider.setUsePool(true);
+            priceProvider.setAggregator(aaveOracle.getSourceOfAsset(WETH));
             vm.stopPrank();
         }
     }
@@ -736,7 +825,7 @@ contract LeveragerTest is Test, AddressProvider {
             _borrowAndRepay();
         }
         {
-            vm.warp(block.timestamp + 10 * 86400);
+            vm.warp(block.timestamp + 5 * 86400);
             console2.log("===== At: ", block.timestamp);
 
             (
@@ -789,7 +878,7 @@ contract LeveragerTest is Test, AddressProvider {
             assertEq(info[0].isClaimed, false);
         }
         {
-            vm.warp(block.timestamp + 15 * 86400);
+            vm.warp(block.timestamp + 10 * 86400);
             console2.log("===== At: ", block.timestamp);
 
             (
@@ -913,7 +1002,7 @@ contract LeveragerTest is Test, AddressProvider {
             console2.log("Alice liquidatable: ", leverager.liquidatable(alice));
         }
         {
-            vm.warp(block.timestamp + 4 * 365 * 86400);
+            vm.warp(block.timestamp + 3 * 365 * 86400);
             console2.log("===== At: ", block.timestamp);
 
             (
